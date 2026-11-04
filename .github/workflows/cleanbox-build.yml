@@ -1,0 +1,42 @@
+name: Build Windows portable app
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: CleanBox
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Test isolated file operations
+        shell: pwsh
+        run: |
+          $test = Start-Process -FilePath "$env:GITHUB_WORKSPACE\CleanBox\CleanBox.exe" -ArgumentList '--self-test' -Wait -PassThru
+          Get-Content -LiteralPath './data/test-results.txt'
+          if ($test.ExitCode -ne 0) { throw 'Core tests failed' }
+
+      - name: Package allowlisted runtime files
+        shell: pwsh
+        run: ./tools/package.ps1
+
+      - name: Upload portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: CleanBox-Windows-x64
+          path: |
+            CleanBox/release/CleanBox-Windows-x64.zip
+            CleanBox/release/CleanBox-Windows-x64.zip.sha256
+          if-no-files-found: error

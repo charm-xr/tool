@@ -1,0 +1,125 @@
+<p align="center"><img src="assets/cleanbox.png" width="96" alt="CleanBox 图标"></p>
+
+# 清理匣 CleanBox
+
+Windows 软件发现、卸载与占用文件处理工具。补充系统卸载列表之外的程序候选，并帮助定位“文件正在使用，无法删除”的原因。
+
+采用 C# / Windows Forms，面向 Windows 10/11 x64，依赖 .NET Framework 4.8。程序运行不需要 Python、Node.js 或额外的开发环境。
+
+## 功能
+
+| 功能 | 具体行为 |
+| --- | --- |
+| 软件清单 | 读取 32/64 位全机与当前用户卸载记录、当前用户商店 / MSIX 包、开始菜单与桌面快捷方式 |
+| 磁盘发现 | 扫描指定文件夹或所选固定磁盘中的 EXE，显示未登记的程序候选，支持取消 |
+| 检索与导出 | 按名称、发布者、路径搜索，按来源筛选，导出 CSV |
+| 正常卸载 | 调用原卸载器、Windows Installer 或当前用户的 AppX 卸载接口 |
+| 残留检查 | 列出安装位置及名称完全匹配的配置目录，由用户逐项核对 |
+| 失效记录 | 对符合条件的卸载列表项先导出 `.reg` 备份，再删除该项 |
+| 占用检查 | 使用 Windows Restart Manager 查询文件占用，并补充从目标目录运行的进程 |
+| 文件处理 | 回收站、永久删除、重启后删除；可对核实身份的普通进程请求退出或强制结束 |
+
+程序发现项不会自动触发卸载或删除。永久删除、重启后删除及强制结束需要再次确认；系统目录、共享根目录、程序自身、目录联接与关键进程设有保护。
+
+## 使用
+
+1. [下载 Windows x64 便携版](https://github.com/ghsvgys51-sketch/tool/raw/refs/heads/main/CleanBox/downloads/CleanBox-Windows-x64.zip)，或按下方说明自行构建。[SHA-256 校验文件](downloads/CleanBox-Windows-x64.zip.sha256)与便携版一起提供。
+2. 将压缩包解压到有写入权限的普通文件夹，双击 `CleanBox.exe`。
+3. 启动后查看基础扫描结果。使用“全盘发现”或“扫描文件夹”补充绿色软件候选。
+4. 软件优先使用“正常卸载”；对已确认的残留或被占用文件，进入“文件占用与删除”。
+
+一般扫描无需管理员权限。受限的文件操作和重启删除需要通过界面切换到管理员模式。
+
+详细操作见 [使用说明](使用说明.txt)。
+
+## 扫描与删除的边界
+
+- 不保证识别所有软件。磁盘发现以 EXE 为候选依据，可能包含辅助程序；纯脚本、DLL、压缩包和未挂载磁盘不作为独立软件自动识别。
+- 不加载其他用户的离线注册表，也不读取其他用户的商店注册。
+- 跳过系统保护区、无权限目录、目录链接，以及 `.git`、`node_modules`、`.venv`、`__pycache__` 等目录。
+- 占用检查最多登记 10,000 个文件。驱动、目录句柄、权限限制等可能使检查不完整；未找到进程不代表没有占用。
+- 直接删除目录不能代替完整卸载；服务和驱动应由原卸载器处理。
+- 重启后删除使用 Windows 的待重启删除机制，需要管理员权限。登记后本工具不提供撤销入口，实际结果应在重启后核对。
+- 不包含内核强删驱动，不修改文件所有者，也不强行关闭系统句柄。
+
+## 本地构建
+
+在 Windows PowerShell 或 PowerShell 中，从仓库目录运行：
+
+```powershell
+.\build.ps1
+```
+
+构建脚本使用 Windows 自带的 Framework C# 编译器，输出 `CleanBox.exe`。需要机器上存在 `.NET Framework 4.8` 及其 Framework 编译器；无需安装 .NET SDK 或还原第三方运行库。
+
+已提交应用图标，因此普通构建不需要 Python。只有重新生成图标时才需要 Pillow：
+
+```powershell
+python -m pip install Pillow
+python .\tools\make_icon.py
+```
+
+## 验证
+
+运行核心测试：
+
+```powershell
+$test = Start-Process .\CleanBox.exe -ArgumentList '--self-test' -Wait -PassThru
+if ($test.ExitCode -ne 0) { throw 'Core tests failed' }
+Get-Content .\data\test-results.txt
+```
+
+测试在程序目录的 `tests/run-*` 中创建专用样例，覆盖路径保护、真实目录联接、中文只读文件、取消行为、实际文件锁定进程识别及删除失败报告。只清理专用测试文件，不卸载软件、不操作重启删除队列。
+
+其他检查：
+
+```powershell
+# 读取当前机器的软件来源并生成本地报告
+Start-Process .\CleanBox.exe -ArgumentList '--scan-report' -Wait
+
+# 程序自身的界面检查，生成本地预览
+Start-Process .\CleanBox.exe -ArgumentList '--ui-check' -Wait
+
+# 指定一个包含 EXE 的已知软件目录，验证磁盘发现（不会运行候选程序）
+.\tools\verify-discovery.ps1 -ScanPath 'C:\Example\PortableApp'
+```
+
+核心检查和本机界面检查已通过。真实软件卸载、注册表删除和重启删除没有对开发机器上的真实软件执行破坏性验收。
+
+## 打包
+
+```powershell
+.\tools\package.ps1
+```
+
+输出 `release/CleanBox-Windows-x64.zip` 和 SHA-256 校验文件。打包采用文件白名单，仅包含程序、运行配置、图标、许可证和文档。
+
+仓库根目录的 GitHub Actions 工作流会在 Windows 上执行构建、核心测试和打包，并上传最新构建产物。`downloads/` 提供由维护者单独更新的已打包版本。
+
+## 数据与隐私
+
+扫描结果、日志、注册表备份和界面预览仅保存在本机。应用本身不上传这些数据，不包含遥测或自动下载组件。
+
+以下目录不进入 Git 历史或发布包：
+
+- `data/`：软件清单、路径、日志、注册表备份与测试结果。
+- `preview/`：可能包含真实软件清单的界面预览。
+- `tests/`：运行时测试文件。
+- `release/`：本地打包暂存目录与产物。
+
+分享问题时请先清理日志中的个人路径、账号、软件列表等信息。
+
+## 目录
+
+```text
+src/             窗口、扫描、原生接口与核心测试
+assets/          应用图标
+tools/           图标生成、发现验证与便携包打包
+downloads/       已打包的 Windows 便携版与校验文件
+build.ps1        本地构建入口（仓库级工作流在 ../.github/）
+CleanBox.exe.config
+```
+
+## 许可证
+
+[MIT](LICENSE)。图标由本项目的 `tools/make_icon.py` 生成。Windows API 与 .NET Framework 由 Microsoft 提供，遵循其各自条款。

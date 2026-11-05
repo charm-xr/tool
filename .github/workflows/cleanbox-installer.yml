@@ -1,0 +1,109 @@
+name: Build and verify CleanBox installer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - CleanBox/tools/CleanBox.iss
+      - CleanBox/tools/build-installer.ps1
+      - .github/workflows/cleanbox-installer.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: CleanBox
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build the installation wizard
+        run: ./tools/build-installer.ps1
+      - name: Check installation, shortcuts, reinstall and uninstall
+        run: |
+          $installDir = Join-Path $env:RUNNER_TEMP 'CleanBox Installer Test'
+          $setup = Join-Path $PWD 'release/CleanBox-Setup-Windows-x64.exe'
+          function Invoke-TestProcess([string]$File, [string[]]$Arguments) {
+              $process = Start-Process -FilePath $File -ArgumentList $Arguments -WindowStyle Hidden -Wait -PassThru
+              if ($process.ExitCode -ne 0) { throw "$File exited with code $($process.ExitCode)" }
+          }
+
+          $setupArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LANG=zhcn', ('/DIR="{0}"' -f $installDir))
+          Invoke-TestProcess $setup $setupArgs
+
+          $app = Join-Path $installDir 'CleanBox.exe'
+          $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'CleanBox/CleanBox.lnk'
+          $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{A9F6C39D-09D9-4A44-B8C1-0AB5EF945C24}_is1'
+          $uninstallEntry = Get-ItemProperty -LiteralPath $uninstallKey
+          $uninstaller = $uninstallEntry.UninstallString.Trim('"')
+          $target = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut).TargetPath
+          if ($target -ne $app -or $uninstallEntry.DisplayName -notlike 'CleanBox*') {
+              throw 'The Start menu shortcut or uninstall entry is incorrect.'
+          }
+
+          $portable = Join-Path $env:RUNNER_TEMP 'CleanBox Portable Reference'
+          Expand-Archive -LiteralPath 'downloads/CleanBox-Windows-x64.zip' -DestinationPath $portable
+          $expected = (Get-FileHash -LiteralPath (Join-Path $portable 'CleanBox/CleanBox.exe')).Hash
+          if ((Get-FileHash -LiteralPath $app).Hash -ne $expected) {
+              throw 'The installed app differs from the portable release.'
+          }
+          Invoke-TestProcess $app @('--self-test')
+
+          $preferences = Join-Path $installDir 'data/ui-preferences.txt'
+          Set-Content -LiteralPath $preferences -Value 'theme=dark'
+          Invoke-TestProcess $setup $setupArgs
+          if ((Get-Content -LiteralPath $preferences) -ne 'theme=dark') {
+              throw 'Reinstall changed user preferences.'
+          }
+
+          Invoke-TestProcess $uninstaller @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
+          foreach ($path in @($app, $shortcut, $uninstallKey)) {
+              if (Test-Path -LiteralPath $path) { throw "Uninstall left $path" }
+          }
+          if ((Get-Content -LiteralPath $preferences) -ne 'theme=dark') {
+              throw 'Uninstall changed user preferences.'
+          }
+          Write-Output 'Installer lifecycle and installed application checks passed.'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CleanBox-Setup-Windows-x64
+          path: |
+            CleanBox/release/CleanBox-Setup-Windows-x64.exe
+            CleanBox/release/CleanBox-Setup-Windows-x64.exe.sha256
+          if-no-files-found: error
+
+  publish:
+    if: github.event.head_commit.message == 'Add CleanBox 2.1.2 Windows installer'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: CleanBox-Setup-Windows-x64
+      - name: Add the tested installer to the existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          tag=cleanbox-v2.1.2
+          target=$(gh api "repos/$GH_REPO/releases/tags/$tag" --jq .target_commitish)
+          test "$target" = a59c6cb8adff59e6e0a08cb0b6e6e0c9f5fb49cc
+          sha256sum --check CleanBox-Setup-Windows-x64.exe.sha256
+          gh release upload "$tag" CleanBox-Setup-Windows-x64.exe CleanBox-Setup-Windows-x64.exe.sha256
+
+          gh release view "$tag" --json body --jq .body > "$RUNNER_TEMP/previous-notes.md"
+          {
+            printf '%s\n\n' '安装版：下载 CleanBox-Setup-Windows-x64.exe，双击后按向导安装。'
+            sed '/^下载 Windows x64 便携包，解压后双击 CleanBox.exe。随附 SHA-256 校验文件。$/d' "$RUNNER_TEMP/previous-notes.md"
+            printf '\n%s\n' '便携版：下载 CleanBox-Windows-x64.zip，解压后双击 CleanBox.exe。两个版本均提供 SHA-256 校验文件。'
+          } > "$RUNNER_TEMP/release-notes.md"
+          gh release edit "$tag" --notes-file "$RUNNER_TEMP/release-notes.md"

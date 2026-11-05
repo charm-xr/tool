@@ -29,8 +29,8 @@ Windows 软件发现、卸载与占用文件处理工具。补充系统卸载列
 
 ## 使用
 
-1. [下载 Windows x64 便携版](https://github.com/charm-xr/tool/raw/refs/heads/main/CleanBox/downloads/CleanBox-Windows-x64.zip)，或按下方说明自行构建。[SHA-256 校验文件](downloads/CleanBox-Windows-x64.zip.sha256)与便携版一起提供。
-2. 将压缩包解压到有写入权限的普通文件夹，双击 `CleanBox.exe`。
+1. 在 [GitHub Releases](https://github.com/charm-xr/tool/releases/tag/cleanbox-v2.1.2) 下载 Windows x64 安装版或便携版，页面提供各自的 SHA-256 校验文件。
+2. 安装版双击 `CleanBox-Setup-Windows-x64.exe`，按向导选择位置和快捷方式。安装后可从开始菜单启动，也可在 Windows 的“已安装的应用”中卸载。便携版解压到有写入权限的文件夹后，双击 `CleanBox.exe`。
 3. 启动后查看基础扫描结果。展开右上角“扫描软件”，使用“全盘发现”或“扫描指定文件夹”补充绿色软件候选，也可导出当前清单。
 4. 软件选中后在右侧查看详情，优先使用“正常卸载”；对已确认的残留或被占用文件，进入左侧“文件解锁”。
 5. 文件页先选择或拖入目标，再检查占用并请求程序退出。永久删除、重启后删除和强制结束位于“高级处理”。
@@ -100,6 +100,8 @@ Start-Process .\CleanBox.exe -ArgumentList '--ui-check' -Wait
 ```powershell
 .\tools\package.ps1
 ```
+
+安装版使用 Inno Setup 6.7 构建。运行 `.\tools\build-installer.ps1` 会校验 `downloads/` 中的便携包，将相同的程序文件封装为 `release/CleanBox-Setup-Windows-x64.exe`，并生成 SHA-256 文件。可用 `-ArchivePath` 指定另一个带校验文件的便携包。
 
 输出 `release/CleanBox-Windows-x64.zip` 和 SHA-256 校验文件。打包采用文件白名单，仅包含程序、运行配置、图标、许可证和文档。
 

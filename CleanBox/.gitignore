@@ -19,6 +19,8 @@
 !/tools/make_icon.py
 !/tools/verify-discovery.ps1
 !/tools/package.ps1
+!/tools/build-installer.ps1
+!/tools/CleanBox.iss
 !/downloads/
 /downloads/*
 !/downloads/CleanBox-Windows-x64.zip

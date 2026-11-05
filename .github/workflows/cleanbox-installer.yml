@@ -79,7 +79,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.event.head_commit.message == 'Add CleanBox 2.1.2 Windows installer'
+    if: github.event.head_commit.message == 'Publish tested CleanBox 2.1.2 installer'
     needs: build
     runs-on: ubuntu-latest
     permissions:

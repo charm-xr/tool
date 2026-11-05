@@ -30,8 +30,17 @@ $outputDir = Join-Path $project 'release'
 $stage = Join-Path $outputDir ('installer-stage-' + [Guid]::NewGuid().ToString('N'))
 Expand-Archive -LiteralPath $archive -DestinationPath $stage
 $payload = Join-Path $stage 'CleanBox'
+$chineseMessages = Join-Path (Split-Path -Parent $CompilerPath) 'Languages\ChineseSimplified.isl'
+if (-not (Test-Path -LiteralPath $chineseMessages -PathType Leaf)) {
+    $chineseMessages = Join-Path $stage 'ChineseSimplified.isl'
+    $translationUrl = 'https://raw.githubusercontent.com/jrsoftware/issrc/6ef32198ef1f7b7b375cd4b6b90896c2a58eb4c2/Files/Languages/ChineseSimplified.isl'
+    Invoke-WebRequest -UseBasicParsing -Uri $translationUrl -OutFile $chineseMessages -TimeoutSec 30
+    if ((Get-FileHash -LiteralPath $chineseMessages).Hash -ne 'E0B0B350E2245F3C5E65586DFE43D574F6E7F06F2261149ABA284954B3FC9A8D') {
+        throw 'The official Simplified Chinese messages file failed verification.'
+    }
+}
 $script = Join-Path $PSScriptRoot 'CleanBox.iss'
-& $CompilerPath "/DPayloadDir=$payload" "/O$outputDir" $script
+& $CompilerPath "/DPayloadDir=$payload" "/DChineseMessages=$chineseMessages" "/O$outputDir" $script
 if ($LASTEXITCODE -ne 0) {
     throw "Installer compilation failed with exit code $LASTEXITCODE."
 }
@@ -39,5 +48,5 @@ if ($LASTEXITCODE -ne 0) {
 $installerName = 'CleanBox-Setup-Windows-x64.exe'
 $installer = Join-Path $outputDir $installerName
 $installerHash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
-"$installerHash  $installerName" | Set-Content -LiteralPath "$installer.sha256" -Encoding ASCII
+[IO.File]::WriteAllText("$installer.sha256", "$installerHash  $installerName" + [char]10, [Text.Encoding]::ASCII)
 Write-Output $installer

@@ -1,5 +1,5 @@
 ﻿#define AppName "CleanBox"
-#define AppVersion GetFileVersion(PayloadDir + "\CleanBox.exe")
+#define AppVersion GetVersionNumbersString(PayloadDir + "\CleanBox.exe")
 #define DisplayVersion Copy(AppVersion, 1, RPos(".", AppVersion) - 1)
 
 [Setup]
@@ -29,7 +29,7 @@ Compression=lzma2
 SolidCompression=yes
 
 [Languages]
-Name: "zhcn"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "zhcn"; MessagesFile: "{#ChineseMessages}"
 Name: "en"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]

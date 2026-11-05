@@ -10,7 +10,7 @@ namespace CleanBox {
     public partial class MainForm {
         async Task VerifyInterface(){
             var result=new List<string>();Action<bool,string> check=(ok,name)=>{if(!ok)throw new Exception(name);result.Add("PASS: "+name);};
-            bool originalDark=Palette.Dark,originalCompact=compact;loadingPreferences=true;
+            bool originalDark=Palette.Dark,originalCompact=compact,originalGlass=Palette.GlassEnabled,originalMotion=Palette.MotionEnabled;loadingPreferences=true;
             try{
                 check(apps.Count>0,"Live inventory populated");check(grid.Rows.Count==apps.Count,"Inventory and grid agree");check(sidebar.Width>=Px(170),"Sidebar scales to the screen DPI");
                 for(int i=0;i<3;i++){navigation[i].PerformClick();check(currentPage==i&&pages[i].Visible&&navigation[i].Selected,"Sidebar navigates to page "+i);}SwitchPage(0);
@@ -39,19 +39,32 @@ namespace CleanBox {
                 }
                 pathBox.Clear();
                 SwitchPage(0);compact=false;UpdateDensity();int normal=grid.Rows[0].Height;compact=true;UpdateDensity();check(grid.Rows[0].Height<normal,"Compact mode reduces actual row heights");compact=false;UpdateDensity();
-                Directory.CreateDirectory(Path.Combine(Store.Home,"preview"));
+                var spring=new SpringValue(.94);spring.Target=1;spring.Velocity=.65;double peak=0;for(int frame=0;frame<180;frame++){spring.Step(1.0/60);peak=Math.Max(peak,spring.Value);}check(peak>1&&peak<1.05&&Math.Abs(spring.Value-1)<.001,"Elastic spring overshoots gently and settles without drift");
+                Palette.MotionEnabled=true;var animationProbe=new UiButton{Text="Motion check",Size=new Size(Px(130),Px(42)),Location=new Point(0,0)};pages[currentPage].Controls.Add(animationProbe);int clicks=0;animationProbe.Click+=(s,e)=>clicks++;
+                animationProbe.PerformClick();if(Palette.Animate)check(animationProbe.VisualScale<1,"Click starts a real press/rebound presentation");await Task.Delay(900);check(clicks==1&&Math.Abs(animationProbe.VisualScale-1)<.001,"Spring animation never repeats the underlying action");
+                animationProbe.PerformClick();Palette.MotionEnabled=false;MotionClock.FinishAll();check(MotionClock.ActiveCount==0&&animationProbe.VisualScale==1,"Disabling motion immediately stops animations");animationProbe.Dispose();Palette.MotionEnabled=true;
+                SwitchPage(1);SwitchPage(2);SwitchPage(0);await Task.Delay(1000);check(currentPage==0&&pages[0].Visible&&MotionClock.ActiveCount==0,"Rapid navigation settles on the requested page and stops the clock");
+                Palette.GlassEnabled=true;Refresh();int generation=Scene.Generation;Refresh();check(Scene.Generation==generation,"Glass backdrop is cached between repaint frames");
+                glassButton.PerformClick();check(!Palette.GlassEnabled,"Glass toggle switches to the solid fallback");glassButton.PerformClick();check(Palette.GlassEnabled,"Glass toggle restores the material");
+                check(scanMenu.Renderer is GlassMenuRenderer&&appMenu.Renderer is GlassMenuRenderer,"Action menus use the unified glass renderer");
+                check(search.BorderStyle==BorderStyle.None&&search.Parent is InputFrame&&pathBox.Parent is InputFrame,"Native editable fields sit inside rounded input surfaces");
+                await VerifyRepainting(check);
+                await VerifyNativePainting(check);
+                await Task.Delay(900);Directory.CreateDirectory(Path.Combine(Store.Home,"preview"));
                 Action<string> capture=name=>{PerformLayout();Refresh();using(var bitmap=new Bitmap(Width,Height)){DrawToBitmap(bitmap,new Rectangle(Point.Empty,Size));bitmap.Save(Path.Combine(Store.Home,"preview",name+".png"),System.Drawing.Imaging.ImageFormat.Png);}};
-                Palette.Dark=false;ApplyTheme(this);StyleGrid();UpdateThemeCaption();ClientSize=new Size(Px(1220),Px(780));SwitchPage(0);capture("v2-software-light");
+                Palette.Dark=false;ApplyTheme(this);StyleGrid();UpdateThemeCaption();ClientSize=new Size(Px(1220),Px(780));SwitchPage(0);MotionClock.FinishAll();capture("v212-software-light");
                 check(detailPanel.Left>=grid.Parent.Right&&detailPanel.Right<=catalogBody.ClientSize.Width,"List and detail panel do not overlap");
                 check(quick.Left>=0&&quick.Right<=quick.Parent.ClientSize.Width,"Scan action stays inside the heading");
-                ClientSize=new Size(Px(1024),Px(662));PerformLayout();ArrangeCatalog();capture("v2-software-compact");
+                check(search.Parent.Bottom<=search.Parent.Parent.ClientSize.Height&&search.Top>=0&&search.Bottom<=search.Parent.ClientSize.Height&&filter.Bottom<=filter.Parent.ClientSize.Height,"Search field and source filter fit the visible row at screen DPI");
+                ClientSize=new Size(Px(1024),Px(662));PerformLayout();ArrangeCatalog();capture("v212-software-compact");
                 check(grid.Width>=Px(300)&&detail.Width>Px(180)&&detailTitle.Right<=detailTitle.Parent.ClientSize.Width,"Narrow window preserves usable list and complete detail layout");
-                SwitchPage(1);pathBox.Text="";capture("v2-file-tools");check(pathBox.Right<=pathBox.Parent.ClientSize.Width&&lockList.Height>=Px(80),"Narrow file page keeps target and results visible");
+                SwitchPage(1);pathBox.Text="";MotionClock.FinishAll();capture("v212-file-tools");check(pathBox.Right<=pathBox.Parent.ClientSize.Width&&lockList.Height>=Px(80),"Narrow file page keeps target and results visible");
+                check(pathBox.Parent.Bottom<=pathBox.Parent.Parent.ClientSize.Height&&pathBox.Top>=0&&pathBox.Bottom<=pathBox.Parent.ClientSize.Height,"Path entry fits inside its visible rounded surface");
                 foreach(var b in selectionActions)check(b.Top>=0&&b.Bottom<=b.Parent.ClientSize.Height&&b.Right<=b.Parent.ClientSize.Width,"Detail action fits its container: "+b.Text);
-                Palette.Dark=true;ApplyTheme(this);StyleGrid();UpdateThemeCaption();SwitchPage(0);capture("v2-software-dark");check(grid.BackgroundColor==Palette.Surface&&detail.BackColor==Palette.Surface&&Ink.GetBrightness()>.5,"Dark theme covers data surfaces and text");
-                SwitchPage(1);capture("v2-file-tools-dark");
+                Palette.Dark=true;ApplyTheme(this);StyleGrid();UpdateThemeCaption();SwitchPage(0);MotionClock.FinishAll();capture("v212-software-dark");check(grid.BackgroundColor==Palette.Surface&&detail.BackColor==Palette.Surface&&Ink.GetBrightness()>.5,"Dark theme covers data surfaces and text");
+                SwitchPage(1);MotionClock.FinishAll();capture("v212-file-tools-dark");Palette.GlassEnabled=false;ApplyTheme(this);StyleGrid();capture("v212-solid-fallback");
                 result.Add("UI checks changed only their own temporary fixture and helper process; no installed software, user files or reboot queue modified.");File.WriteAllLines(Path.Combine(Store.Data,"ui-results.txt"),result,System.Text.Encoding.UTF8);
-            }finally{Palette.Dark=originalDark;compact=originalCompact;loadingPreferences=false;}
+            }finally{MotionClock.FinishAll();Palette.Dark=originalDark;compact=originalCompact;Palette.GlassEnabled=originalGlass;Palette.MotionEnabled=originalMotion;loadingPreferences=false;}
         }
     }
 }

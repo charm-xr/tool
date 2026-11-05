@@ -9,28 +9,30 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 namespace CleanBox {
     public partial class MainForm:Form {
+        internal readonly GlassScene Scene=new GlassScene();
         static Color Ink{get{return Palette.Ink;}}static Color Muted{get{return Palette.Muted;}}static Color Teal{get{return Palette.Accent;}}static Color Bg{get{return Palette.Bg;}}static Color Line{get{return Palette.Line;}}
         readonly List<AppEntry> apps=new List<AppEntry>();readonly HashSet<string> ids=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         readonly ConcurrentQueue<AppEntry> queue=new ConcurrentQueue<AppEntry>();readonly ConcurrentQueue<string> logs=new ConcurrentQueue<string>();
         readonly Dictionary<string,Image> appIcons=new Dictionary<string,Image>();readonly HashSet<string> iconPending=new HashSet<string>();int activeIcons;
         readonly List<Button> selectionActions=new List<Button>();readonly ToolTip tips=new ToolTip{AutoPopDelay=15000,InitialDelay=450};
         DataGridView grid;TextBox search,detail,pathBox,logBox;ChoiceButton filter;Label status,totalLabel,installedLabel,foundLabel,lockSummary,detailTitle,detailSubtitle,listCount,emptyList,stepLabel,dropText;
-        Label[] steps;ListBox lockList;Button quick,disk,folder,cancel,adminButton,uninstallButton,openButton,residualButton,inspectButton,stopButton,recycleButton,fileMore,themeButton,densityButton;
+        Label[] steps;ListBox lockList;Button quick,disk,folder,cancel,adminButton,uninstallButton,openButton,residualButton,inspectButton,stopButton,recycleButton,fileMore,themeButton,densityButton,glassButton,motionButton;
         ProgressBar progress;Panel host,sidebar,catalogBody,detailPanel,dropZone;Panel[] pages;UiButton[] navigation;PictureBox detailIcon;ContextMenuStrip scanMenu,appMenu,fileMenu;
         CancellationTokenSource cts;bool working,compact,closing,loadingPreferences=true;volatile string latestStatus="准备就绪";System.Windows.Forms.Timer timer;string lockPath="";int currentPage;float dpiScale=1;
         bool IsCandidate(AppEntry a){return a!=null&&a.RegistryPath.Length==0&&a.Package.Length==0;}
         int Px(int n){return (int)Math.Round(n*dpiScale);}
         public MainForm(string initialTarget=null,bool uiCheck=false){
-            SuspendLayout();ReadPreferences();Text="清理匣 CleanBox 2.0";Font=new Font("Microsoft YaHei UI",9F);AutoScaleMode=AutoScaleMode.None;ClientSize=new Size(1220,780);MinimumSize=new Size(960,640);StartPosition=FormStartPosition.CenterScreen;BackColor=Bg;ForeColor=Ink;
+            SuspendLayout();DoubleBuffered=true;ReadPreferences();Text="清理匣 CleanBox 2.1.2";Font=new Font("Microsoft YaHei UI",9F);AutoScaleMode=AutoScaleMode.None;ClientSize=new Size(1220,780);MinimumSize=new Size(960,640);StartPosition=FormStartPosition.CenterScreen;BackColor=Bg;ForeColor=Ink;
             try{Icon=new Icon(Path.Combine(Store.Home,"assets","cleanbox.ico"));}catch{}
             BuildShell();using(var graphics=CreateGraphics())dpiScale=graphics.DpiX/96f;if(dpiScale!=1f)Scale(new SizeF(dpiScale,dpiScale));MinimumSize=new Size(Px(960),Px(640));ClientSize=new Size(Px(1220),Px(780));ResumeLayout(true);var area=Screen.FromControl(this).WorkingArea;Size=new Size(Math.Min(Width,area.Width-32),Math.Min(Height,area.Height-32));ApplyTheme(this);StyleGrid();UpdateDensity();SwitchPage(0);ShowSelection();SetStep(0);loadingPreferences=false;
             timer=new System.Windows.Forms.Timer{Interval=200};timer.Tick+=(s,e)=>Drain();timer.Start();Store.Logged+=OnLog;
             Shown+=async(s,e)=>{using(var g=CreateGraphics())dpiScale=g.DpiX/96f;ArrangeCatalog();UpdateDensity();if(!string.IsNullOrEmpty(initialTarget)){pathBox.Text=initialTarget;SwitchPage(1);}await QuickScan();if(uiCheck){try{await Task.Delay(700);await VerifyInterface();}catch(Exception ex){Directory.CreateDirectory(Store.Data);File.WriteAllText(Path.Combine(Store.Data,"ui-results.txt"),"FAIL\r\n"+ex);Environment.ExitCode=1;}Close();}};
             FormClosing+=(s,e)=>{if(working){MessageBox.Show(this,"请先取消扫描，或等待当前操作完成，再退出。","任务仍在进行");e.Cancel=true;}};
-            FormClosed+=(s,e)=>{closing=true;timer.Stop();timer.Dispose();Store.Logged-=OnLog;tips.Dispose();if(cts!=null)cts.Dispose();foreach(var img in appIcons.Values)if(img!=null)img.Dispose();scanMenu.Dispose();appMenu.Dispose();fileMenu.Dispose();disk.Dispose();folder.Dispose();};
+            FormClosed+=(s,e)=>{closing=true;timer.Stop();timer.Dispose();MotionClock.FinishAll();Scene.Dispose();Store.Logged-=OnLog;tips.Dispose();if(cts!=null)cts.Dispose();foreach(var img in appIcons.Values)if(img!=null)img.Dispose();scanMenu.Dispose();appMenu.Dispose();fileMenu.Dispose();disk.Dispose();folder.Dispose();};
             KeyPreview=true;KeyDown+=async(s,e)=>{if(e.Control&&e.KeyCode==Keys.F){SwitchPage(0);search.Focus();e.SuppressKeyPress=true;}if(e.KeyCode==Keys.F5&&!working){e.SuppressKeyPress=true;await QuickScan();}if(e.KeyCode==Keys.Escape&&cts!=null){cts.Cancel();e.SuppressKeyPress=true;}};
         }
-        void SwitchPage(int index){if(pages==null)return;currentPage=index;for(int i=0;i<pages.Length;i++){pages[i].Visible=i==index;navigation[i].Selected=i==index;navigation[i].Invalidate();}pages[index].BringToFront();if(index==0)ArrangeCatalog();}
+        protected override void OnPaintBackground(PaintEventArgs e){if(Scene==null)base.OnPaintBackground(e);else Scene.Draw(e.Graphics,ClientSize,Point.Empty,false);}
+        void SwitchPage(int index){if(pages==null)return;host.SuspendLayout();try{currentPage=index;pages[index].Visible=true;pages[index].BringToFront();for(int i=0;i<pages.Length;i++){if(i!=index)pages[i].Visible=false;navigation[i].Selected=i==index;}if(index==0)ArrangeCatalog();}finally{host.ResumeLayout(true);}}
         void ArrangeCatalog(){if(catalogBody==null||detailPanel==null)return;detailPanel.Width=Px(catalogBody.Width<Px(880)?265:292);if(grid!=null&&grid.Columns.Count==3)grid.Columns[1].Visible=catalogBody.Width>=Px(810);}
         void SetStep(int step){if(steps==null)return;for(int i=0;i<steps.Length;i++){steps[i].ForeColor=i==step?Teal:Muted;}}
         void UpdateFileActions(){if(inspectButton==null||pathBox==null||stopButton==null)return;bool target=!string.IsNullOrWhiteSpace(pathBox.Text);var owner=lockList.SelectedItem as LockOwner;inspectButton.Enabled=target&&!working;stopButton.Enabled=!working&&owner!=null&&owner.CanStop&&lockPath.Length>0;recycleButton.Enabled=target&&!working;fileMore.Enabled=target&&!working;pathBox.ReadOnly=working;if(fileMenu!=null)fileMenu.Items[0].Enabled=stopButton.Enabled;}

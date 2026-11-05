@@ -1,0 +1,48 @@
+name: Publish CleanBox 2.1.2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - CleanBox/downloads/CleanBox-Windows-x64.zip.sha256
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.event.head_commit.message == 'Publish CleanBox 2.1.2'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify the tested portable archive
+        working-directory: CleanBox/downloads
+        run: sha256sum --check CleanBox-Windows-x64.zip.sha256
+
+      - name: Create the release with both download files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          cat > "${RUNNER_TEMP}/cleanbox-notes.md" <<'EOF'
+          ## CleanBox 2.1.2
+
+          - 新增磨砂玻璃界面、圆角控件和轻微的按钮回弹，玻璃效果和动效可分别关闭。
+          - 修复按钮黑底、文字重影及深浅色切换时的残影。页面和列表位置保持固定。
+          - 通过 26 项核心检查和 78 项界面检查，覆盖深浅色按钮在 Windows 实际绘制路径中的背景重绘。
+
+          下载 Windows x64 便携包，解压后双击 CleanBox.exe。随附 SHA-256 校验文件。
+          EOF
+          gh release create cleanbox-v2.1.2 \
+            CleanBox/downloads/CleanBox-Windows-x64.zip \
+            CleanBox/downloads/CleanBox-Windows-x64.zip.sha256 \
+            --target "$GITHUB_SHA" \
+            --title "CleanBox 2.1.2" \
+            --notes-file "${RUNNER_TEMP}/cleanbox-notes.md" \
+            --latest

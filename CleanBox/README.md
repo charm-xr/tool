@@ -1,12 +1,14 @@
 <p align="center"><img src="assets/cleanbox.png" width="96" alt="CleanBox 图标"></p>
 
-# 清理匣 CleanBox
+# 清理匣 CleanBox 2.0
 
 Windows 软件发现、卸载与占用文件处理工具。补充系统卸载列表之外的程序候选，并帮助定位“文件正在使用，无法删除”的原因。
 
 采用 C# / Windows Forms，面向 Windows 10/11 x64，依赖 .NET Framework 4.8。程序运行不需要 Python、Node.js 或额外的开发环境。
 
 ## 功能
+
+2.0 重做了桌面界面：左侧导航、带图标的软件清单、右侧详情，以及分步文件解锁。支持深浅色外观、舒适 / 紧凑列表，并在本地记住选择。小窗口会收起版本列，版本仍可在右侧查看。
 
 | 功能 | 具体行为 |
 | --- | --- |
@@ -23,10 +25,13 @@ Windows 软件发现、卸载与占用文件处理工具。补充系统卸载列
 
 ## 使用
 
-1. [下载 Windows x64 便携版](https://github.com/ghsvgys51-sketch/tool/raw/refs/heads/main/CleanBox/downloads/CleanBox-Windows-x64.zip)，或按下方说明自行构建。[SHA-256 校验文件](downloads/CleanBox-Windows-x64.zip.sha256)与便携版一起提供。
+1. [下载 Windows x64 便携版](https://github.com/charm-xr/tool/raw/refs/heads/main/CleanBox/downloads/CleanBox-Windows-x64.zip)，或按下方说明自行构建。[SHA-256 校验文件](downloads/CleanBox-Windows-x64.zip.sha256)与便携版一起提供。
 2. 将压缩包解压到有写入权限的普通文件夹，双击 `CleanBox.exe`。
-3. 启动后查看基础扫描结果。使用“全盘发现”或“扫描文件夹”补充绿色软件候选。
-4. 软件优先使用“正常卸载”；对已确认的残留或被占用文件，进入“文件占用与删除”。
+3. 启动后查看基础扫描结果。展开右上角“扫描软件”，使用“全盘发现”或“扫描指定文件夹”补充绿色软件候选，也可导出当前清单。
+4. 软件选中后在右侧查看详情，优先使用“正常卸载”；对已确认的残留或被占用文件，进入左侧“文件解锁”。
+5. 文件页先选择或拖入目标，再检查占用并请求程序退出。永久删除、重启后删除和强制结束位于“高级处理”。
+
+快捷键：`Ctrl + F` 搜索软件；`F5` 基础扫描；`Esc` 取消当前可取消的任务。主题和列表密度可在左下角切换，管理员模式也位于左下角。
 
 一般扫描无需管理员权限。受限的文件操作和重启删除需要通过界面切换到管理员模式。
 
@@ -106,6 +111,7 @@ Start-Process .\CleanBox.exe -ArgumentList '--ui-check' -Wait
 - `preview/`：可能包含真实软件清单的界面预览。
 - `tests/`：运行时测试文件。
 - `release/`：本地打包暂存目录与产物。
+- `backups/`：本地升级前的程序和源码备份。
 
 分享问题时请先清理日志中的个人路径、账号、软件列表等信息。
 

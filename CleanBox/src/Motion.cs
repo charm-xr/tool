@@ -9,11 +9,12 @@ namespace CleanBox {
     // A damped spring changes only presentation values; it never raises input events.
     internal sealed class SpringValue {
         public double Value,Target,Velocity;
-        public SpringValue(double value){Value=Target=value;}
+        readonly double stiffness,damping;
+        public SpringValue(double value,double stiffness=390,double damping=25){Value=Target=value;this.stiffness=stiffness;this.damping=damping;}
         public void Snap(double value){Value=Target=value;Velocity=0;}
         public bool Step(double seconds){
             double dt=Math.Min(.032,Math.Max(.001,seconds))/2;
-            for(int i=0;i<2;i++){Velocity+=(390*(Target-Value)-25*Velocity)*dt;Value+=Velocity*dt;}
+            for(int i=0;i<2;i++){Velocity+=(stiffness*(Target-Value)-damping*Velocity)*dt;Value+=Velocity*dt;}
             if(Math.Abs(Target-Value)<.0005&&Math.Abs(Velocity)<.005){Snap(Target);return false;}
             return true;
         }

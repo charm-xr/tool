@@ -22,7 +22,7 @@ namespace CleanBox {
         bool IsCandidate(AppEntry a){return a!=null&&a.RegistryPath.Length==0&&a.Package.Length==0;}
         int Px(int n){return (int)Math.Round(n*dpiScale);}
         public MainForm(string initialTarget=null,bool uiCheck=false){
-            SuspendLayout();DoubleBuffered=true;ReadPreferences();Text="清理匣 CleanBox 2.1.2";Font=new Font("Microsoft YaHei UI",9F);AutoScaleMode=AutoScaleMode.None;ClientSize=new Size(1220,780);MinimumSize=new Size(960,640);StartPosition=FormStartPosition.CenterScreen;BackColor=Bg;ForeColor=Ink;
+            SuspendLayout();DoubleBuffered=true;ReadPreferences();Text="清理匣 CleanBox 2.1.9";Font=new Font("Microsoft YaHei UI",9F);AutoScaleMode=AutoScaleMode.None;ClientSize=new Size(1220,780);MinimumSize=new Size(960,640);StartPosition=FormStartPosition.CenterScreen;BackColor=Bg;ForeColor=Ink;
             try{Icon=new Icon(Path.Combine(Store.Home,"assets","cleanbox.ico"));}catch{}
             BuildShell();using(var graphics=CreateGraphics())dpiScale=graphics.DpiX/96f;if(dpiScale!=1f)Scale(new SizeF(dpiScale,dpiScale));MinimumSize=new Size(Px(960),Px(640));ClientSize=new Size(Px(1220),Px(780));ResumeLayout(true);var area=Screen.FromControl(this).WorkingArea;Size=new Size(Math.Min(Width,area.Width-32),Math.Min(Height,area.Height-32));ApplyTheme(this);StyleGrid();UpdateDensity();SwitchPage(0);ShowSelection();SetStep(0);loadingPreferences=false;
             timer=new System.Windows.Forms.Timer{Interval=200};timer.Tick+=(s,e)=>Drain();timer.Start();Store.Logged+=OnLog;

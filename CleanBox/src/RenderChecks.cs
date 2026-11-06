@@ -49,6 +49,72 @@ namespace CleanBox {
             if(first.Size!=second.Size)return false;
             for(int y=0;y<first.Height;y++)for(int x=0;x<first.Width;x++)if(first.GetPixel(x,y)!=second.GetPixel(x,y))return false;return true;
         }
+        static double PixelDifference(Bitmap first,Bitmap second){
+            long difference=0;
+            for(int y=0;y<first.Height;y++)for(int x=0;x<first.Width;x++){
+                var a=first.GetPixel(x,y);var b=second.GetPixel(x,y);
+                difference+=Math.Abs(a.R-b.R)+Math.Abs(a.G-b.G)+Math.Abs(a.B-b.B);
+            }
+            return difference/(double)(first.Width*first.Height*3);
+        }
+        async Task VerifyGlassLight(Action<bool,string> check){
+            bool originalDark=Palette.Dark,originalGlass=Palette.GlassEnabled,originalMotion=Palette.MotionEnabled;
+            try{
+                Palette.GlassEnabled=true;Palette.MotionEnabled=true;SwitchPage(0);
+                foreach(bool dark in new[]{false,true}){
+                    Palette.Dark=dark;RefreshMaterial();
+                    using(var probe=new NativePaintProbe{Text="玻璃光效 · 轻按回弹",Size=new Size(Px(260),Px(48)),Location=new Point(Px(180),Px(10))}){
+                        pages[0].Controls.Add(probe);ApplyTheme(probe);probe.CreateControl();probe.BringToFront();
+                        var samples=new System.Collections.Generic.List<Bitmap>();
+                        try{
+                            samples.Add(PaintWindowFrame(probe,Color.Magenta));
+                            probe.HoverAt(new Point(probe.Width/5,probe.Height/3));
+                            for(int frame=0;frame<90;frame++)probe.Advance(1.0/60);
+                            samples.Add(PaintWindowFrame(probe,Color.Lime));
+                            double hoverDifference=PixelDifference(samples[0],samples[1]);
+                            check(hoverDifference>5,(dark?"Dark":"Light")+" hover light produces visible contrast (mean channel change "+hoverDifference.ToString("F1")+")");
+                            probe.MoveLight(new Point(probe.Width*4/5,probe.Height/3));
+                            using(var firstFrame=PaintWindowFrame(probe,Color.Magenta))check(SamePixels(samples[1],firstFrame),"Pointer light follows through spring updates instead of teleporting");
+                            for(int frame=0;frame<90;frame++)probe.Advance(1.0/60);
+                            samples.Add(PaintWindowFrame(probe,Color.Magenta));
+                            check(PixelDifference(samples[1],samples[2])>6,"Moving the pointer visibly relocates the light");
+                            probe.PressLight(true);
+                            for(int frame=0;frame<45;frame++)probe.Advance(1.0/60);
+                            samples.Add(PaintWindowFrame(probe,Color.Magenta));
+                            check(probe.VisualScale<.955&&CornersMatchParent(probe,samples[3]),"Press visibly compresses the capsule without dirtying its corners");
+                            probe.PressLight(false);int clicks=0;probe.Click+=(s,e)=>clicks++;probe.PerformClick();
+                            double peak=0;
+                            for(int frame=0;frame<10;frame++){probe.Advance(1.0/60);peak=Math.Max(peak,probe.VisualScale);}
+                            samples.Add(PaintWindowFrame(probe,Color.Lime));
+                            for(int frame=0;frame<170;frame++){probe.Advance(1.0/60);peak=Math.Max(peak,probe.VisualScale);}
+                            check(peak>1.005&&peak<1.04&&clicks==1,"Release spring peak "+peak.ToString("F4")+" dispatches "+clicks+" action");
+                            probe.LeaveLight();await Task.Delay(1100);
+                            check(MotionClock.ActiveCount==0,"Light and rebound stop repainting after settling");
+                            samples.Add(PaintWindowFrame(probe,Color.Magenta));
+                            using(var sheet=new Bitmap(probe.Width+Px(150),probe.Height*samples.Count))using(var g=Graphics.FromImage(sheet)){
+                                g.Clear(Palette.Bg);string[] labels={"静止","左侧跟光","右侧跟光","按住","松手回弹","移开后"};
+                                for(int i=0;i<samples.Count;i++){
+                                    TextRenderer.DrawText(g,labels[i],Font,new Rectangle(12,i*probe.Height,Px(130),probe.Height),Palette.Ink,TextFormatFlags.VerticalCenter);
+                                    g.DrawImageUnscaled(samples[i],Px(150),i*probe.Height);
+                                }
+                                sheet.Save(Path.Combine(Store.Home,"preview",dark?"v219-light-dark.png":"v219-light-light.png"),ImageFormat.Png);
+                            }
+                            check(SamePixels(samples[0],samples[5]),(dark?"Dark":"Light")+" pointer exit restores the exact idle frame with no residual light");
+                            Palette.MotionEnabled=false;MotionClock.FinishAll();probe.HoverAt(new Point(0,0));
+                            check(MotionClock.ActiveCount==0&&probe.VisualScale==1,"Disabling motion keeps pointer lighting immediate and stationary");
+                            probe.LeaveLight();
+                            using(var idle=PaintWindowFrame(probe,Color.Lime))check(SamePixels(samples[0],idle),"With motion disabled, pointer exit clears the light immediately");
+                            Palette.GlassEnabled=false;
+                            using(var unlit=PaintWindowFrame(probe,Color.Magenta)){
+                                probe.MoveLight(new Point(probe.Width,probe.Height));
+                                using(var moved=PaintWindowFrame(probe,Color.Lime))check(SamePixels(unlit,moved),"Disabling glass removes pointer light");
+                            }
+                            Palette.GlassEnabled=true;Palette.MotionEnabled=true;
+                        }finally{foreach(var sample in samples)sample.Dispose();}
+                    }
+                }
+            }finally{Palette.Dark=originalDark;Palette.GlassEnabled=originalGlass;Palette.MotionEnabled=originalMotion;RefreshMaterial();}
+        }
         static bool BackgroundMatchesParent(Control button){
             using(var child=PaintFrame(button,Color.Lime,true))return CornersMatchParent(button,child);
         }
@@ -102,6 +168,10 @@ namespace CleanBox {
     internal class NativePaintProbe:UiButton {
         internal int BackgroundCalls,ForegroundCalls;
         internal bool IsOpaque{get{return GetStyle(ControlStyles.Opaque);}}
+        internal void HoverAt(Point point){OnMouseEnter(EventArgs.Empty);MoveLight(point);}
+        internal void MoveLight(Point point){OnMouseMove(new MouseEventArgs(MouseButtons.None,0,point.X,point.Y,0));}
+        internal void LeaveLight(){OnMouseLeave(EventArgs.Empty);}
+        internal void PressLight(bool down){var args=new MouseEventArgs(MouseButtons.Left,1,Width/2,Height/2,0);if(down)OnMouseDown(args);else OnMouseUp(args);}
         protected override void OnPaintBackground(PaintEventArgs e){BackgroundCalls++;base.OnPaintBackground(e);}
         protected override void OnPaint(PaintEventArgs e){ForegroundCalls++;base.OnPaint(e);}
     }

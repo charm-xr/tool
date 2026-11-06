@@ -6,6 +6,7 @@ on:
     paths:
       - CleanBox/tools/CleanBox.iss
       - CleanBox/tools/build-installer.ps1
+      - CleanBox/downloads/CleanBox-Windows-x64.zip.sha256
       - .github/workflows/cleanbox-installer.yml
 
 permissions:
@@ -38,6 +39,9 @@ jobs:
           Invoke-TestProcess $setup $setupArgs
 
           $app = Join-Path $installDir 'CleanBox.exe'
+          if ($env:RELEASE_BUILD -eq 'true' -and (Get-Item -LiteralPath $app).VersionInfo.FileVersion -ne '2.1.9.0') {
+              throw 'The installer must contain CleanBox 2.1.9.'
+          }
           $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'CleanBox/CleanBox.lnk'
           $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{A9F6C39D-09D9-4A44-B8C1-0AB5EF945C24}_is1'
           $uninstallEntry = Get-ItemProperty -LiteralPath $uninstallKey
@@ -70,6 +74,8 @@ jobs:
               throw 'Uninstall changed user preferences.'
           }
           Write-Output 'Installer lifecycle and installed application checks passed.'
+        env:
+          RELEASE_BUILD: ${{ github.event.head_commit.message == 'Publish CleanBox 2.1.9' }}
       - uses: actions/upload-artifact@v4
         with:
           name: CleanBox-Setup-Windows-x64
@@ -79,31 +85,43 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.event.head_commit.message == 'Publish tested CleanBox 2.1.2 installer'
+    if: github.event.head_commit.message == 'Publish CleanBox 2.1.9'
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: CleanBox-Setup-Windows-x64
-      - name: Add the tested installer to the existing release
+          path: release-assets
+      - name: Publish the verified installation and portable packages
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
-          tag=cleanbox-v2.1.2
-          target=$(gh api "repos/$GH_REPO/releases/tags/$tag" --jq .target_commitish)
-          test "$target" = a59c6cb8adff59e6e0a08cb0b6e6e0c9f5fb49cc
+          cp CleanBox/downloads/CleanBox-Windows-x64.zip{,.sha256} release-assets/
+          cd release-assets
           sha256sum --check CleanBox-Setup-Windows-x64.exe.sha256
-          gh release upload "$tag" CleanBox-Setup-Windows-x64.exe CleanBox-Setup-Windows-x64.exe.sha256
+          sha256sum --check CleanBox-Windows-x64.zip.sha256
 
-          gh release view "$tag" --json body --jq .body > "$RUNNER_TEMP/previous-notes.md"
-          {
-            printf '%s\n\n' '安装版：下载 CleanBox-Setup-Windows-x64.exe，双击后按向导安装。'
-            sed '/^下载 Windows x64 便携包，解压后双击 CleanBox.exe。随附 SHA-256 校验文件。$/d' "$RUNNER_TEMP/previous-notes.md"
-            printf '\n%s\n' '便携版：下载 CleanBox-Windows-x64.zip，解压后双击 CleanBox.exe。两个版本均提供 SHA-256 校验文件。'
-          } > "$RUNNER_TEMP/release-notes.md"
-          gh release edit "$tag" --notes-file "$RUNNER_TEMP/release-notes.md"
+          cat > "$RUNNER_TEMP/cleanbox-notes.md" <<'EOF'
+          - 修复拖动滚动条时内容延迟更新和滑块回跳。滑块跟随鼠标，内容边拖边刷新。
+          - 横向和纵向滚动条统一适配深浅色，修复拖动时白底和悬停闪烁。
+          - 软件列表使用独立圆角玻璃行，鼠标高光只在当前行内显示。Windows 11 标题栏跟随应用主题。
+
+          **Windows x64 安装版**：下载 `CleanBox-Setup-Windows-x64.exe`，双击后按向导安装。
+
+          **便携版**：下载 `CleanBox-Windows-x64.zip`，解压后打开 `CleanBox.exe`。
+
+          两个下载包均附 SHA-256 校验文件。
+          EOF
+          gh release create cleanbox-v2.1.9 \
+            CleanBox-Setup-Windows-x64.exe CleanBox-Setup-Windows-x64.exe.sha256 \
+            CleanBox-Windows-x64.zip CleanBox-Windows-x64.zip.sha256 \
+            --target "$GITHUB_SHA" --title 'CleanBox 2.1.9' \
+            --notes-file "$RUNNER_TEMP/cleanbox-notes.md" --latest

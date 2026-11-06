@@ -15,7 +15,12 @@ namespace CleanBox {
         public void Draw(Graphics g,Size canvas,Point origin,bool frosted){
             if(!Palette.Glass){using(var b=new SolidBrush(Palette.Bg))g.FillRectangle(b,-origin.X,-origin.Y,canvas.Width,canvas.Height);return;}
             Ensure(canvas);var state=g.Save();g.InterpolationMode=InterpolationMode.HighQualityBicubic;
-            g.DrawImage(frosted?blurred:background,new Rectangle(-origin.X,-origin.Y,canvas.Width,canvas.Height));g.Restore(state);
+            var image=frosted?blurred:background;
+            using(var edges=new ImageAttributes()){
+                edges.SetWrapMode(WrapMode.TileFlipXY);
+                g.DrawImage(image,new Rectangle(-origin.X,-origin.Y,canvas.Width,canvas.Height),0,0,image.Width,image.Height,GraphicsUnit.Pixel,edges);
+            }
+            g.Restore(state);
         }
         void Ensure(Size canvas){
             if(background!=null&&size==canvas&&dark==Palette.Dark)return;Dispose();size=canvas;dark=Palette.Dark;Generation++;
@@ -26,6 +31,12 @@ namespace CleanBox {
                 Glow(g,new RectangleF(w*.45f,-h*.30f,w*.95f,h*.95f),Palette.Dark?Color.FromArgb(95,92,65,160):Color.FromArgb(160,190,182,239));
                 Glow(g,new RectangleF(w*.1f,h*.58f,w*1.0f,h*.9f),Palette.Dark?Color.FromArgb(60,35,113,156):Color.FromArgb(145,218,207,239));
                 Glow(g,new RectangleF(w*.7f,h*.52f,w*.7f,h*.9f),Palette.Dark?Color.FromArgb(38,145,99,88):Color.FromArgb(140,249,223,205));
+                // A shared top tone joins the native caption to the app backdrop.
+                var top=new RectangleF(0,0,w,Math.Max(12,h*.25f));
+                using(var fade=new LinearGradientBrush(top,Palette.WindowTop,Color.FromArgb(0,Palette.WindowTop),LinearGradientMode.Vertical)){
+                    fade.InterpolationColors=new ColorBlend{Positions=new[]{0f,.12f,1f},Colors=new[]{Palette.WindowTop,Palette.WindowTop,Color.FromArgb(0,Palette.WindowTop)}};
+                    g.FillRectangle(fade,top);
+                }
             }
             blurred=(Bitmap)background.Clone();Blur(blurred,6);
         }
@@ -62,17 +73,66 @@ namespace CleanBox {
             var form=control.FindForm() as MainForm;if(form==null){using(var b=new SolidBrush(Palette.Bg))g.FillRectangle(b,control.ClientRectangle);return;}
             Point origin=Point.Empty;Control node=control;while(node!=null&&node!=form){origin.Offset(node.Left,node.Top);node=node.Parent;}form.Scene.Draw(g,form.ClientSize,origin,frosted);
         }
-        public static void Surface(Control owner,Graphics g,RectangleF rect,float radius,float emphasis){
+        public static void Surface(Control owner,Graphics g,RectangleF rect,float radius,float emphasis,Bitmap frostedBackdrop=null){
             if(rect.Width<2||rect.Height<2)return;var state=g.Save();g.SmoothingMode=SmoothingMode.AntiAlias;
             for(int i=3;i>0;i--){var shadow=rect;shadow.Offset(0,i);shadow.Inflate(i*.6f,i*.4f);using(var p=Palette.Shape(shadow,radius))using(var b=new SolidBrush(Color.FromArgb(Palette.Dark?8:5,15,36,67)))g.FillPath(b,p);}
             using(var path=Palette.Shape(rect,radius)){
-                g.SetClip(path,CombineMode.Intersect);Backdrop(owner,g,true);
-                using(var tint=new SolidBrush(Palette.Glass?Color.FromArgb(Palette.Dark?170:164,Palette.Surface):Palette.Surface))g.FillPath(tint,path);
-                using(var wash=new LinearGradientBrush(rect,Color.FromArgb(Palette.Dark?19:98,Color.White),Color.FromArgb(Palette.Dark?2:12,Color.White),LinearGradientMode.Vertical))g.FillPath(wash,path);
+                g.SetClip(path,CombineMode.Intersect);if(frostedBackdrop==null)Backdrop(owner,g,true);else g.DrawImageUnscaled(frostedBackdrop,Point.Empty);
+                using(var tint=new SolidBrush(Palette.Glass?Color.FromArgb(Palette.Dark?162:122,Palette.Surface):Palette.Surface))g.FillPath(tint,path);
+                using(var wash=new LinearGradientBrush(rect,Color.FromArgb(Palette.Dark?26:112,Color.White),Color.FromArgb(Palette.Dark?3:28,Palette.Dark?Color.White:Color.FromArgb(44,149,178)),LinearGradientMode.Vertical))g.FillPath(wash,path);
                 if(emphasis>0)using(var b=new SolidBrush(Color.FromArgb((int)(Math.Min(1,emphasis)*30),Palette.Accent)))g.FillPath(b,path);
                 g.Restore(state);state=g.Save();g.SmoothingMode=SmoothingMode.AntiAlias;
                 using(var edge=new LinearGradientBrush(rect,Color.FromArgb(Palette.Dark?65:220,Color.White),Color.FromArgb(Palette.Dark?60:80,Palette.Accent),LinearGradientMode.ForwardDiagonal))using(var pen=new Pen(edge,1.2f))g.DrawPath(pen,path);
             }g.Restore(state);
+        }
+        // Light stays inside the capsule. The foreground text is drawn afterwards
+        // at its original position, so the spring never moves the label or hit box.
+        public static void ButtonLight(Graphics g,RectangleF rect,float radius,PointF position,float hover,float pulse,bool primary,float maxLightWidth=0){
+            float intensity=Math.Max(0,Math.Min(1,Math.Max(hover,pulse)));
+            // Pointer lighting has no idle brightness: every layer fades to zero.
+            if(intensity<=.001f)return;
+            float x=rect.Left+rect.Width*Math.Max(.05f,Math.Min(.95f,position.X));
+            float y=rect.Top+rect.Height*Math.Max(.1f,Math.Min(.9f,position.Y));
+            float span=maxLightWidth>0?Math.Min(rect.Width,maxLightWidth):rect.Width;
+            var state=g.Save();
+            using(var path=Palette.Shape(rect,radius)){
+                g.SetClip(path,CombineMode.Intersect);
+                Color cyan=Palette.Dark?Color.FromArgb(100,231,245):Color.FromArgb(20,161,204);
+                Color violet=Palette.Dark?Color.FromArgb(172,158,255):Color.FromArgb(121,99,218);
+                int colorAlpha=(int)(intensity*(Palette.Dark?108:115));
+                if(primary)colorAlpha/=2;
+                SoftLight(g,new RectangleF(x-span*.37f,y-rect.Height*.9f,span*.74f,rect.Height*1.8f),Color.FromArgb(colorAlpha,cyan));
+                float violetLeft=maxLightWidth>0?x+span*.03f:rect.Right-rect.Width*.42f-(x-rect.Left)*.23f;
+                SoftLight(g,new RectangleF(violetLeft,rect.Top+rect.Height*.16f,span*.63f,rect.Height*1.5f),Color.FromArgb(colorAlpha*2/3,violet));
+
+                float shineWidth=span*(.33f+.14f*pulse);
+                int shineAlpha=(int)(intensity*(primary?79:230));
+                SoftLight(g,new RectangleF(x-shineWidth/2,rect.Top-rect.Height*.4f+position.Y*rect.Height*.32f,shineWidth,rect.Height*1.22f),Color.FromArgb(shineAlpha,Color.White));
+                if(pulse>.01f){
+                    float waveWidth=span*(.2f+(1-pulse)*1.4f);
+                    SoftLight(g,new RectangleF(x-waveWidth/2,y-rect.Height, waveWidth,rect.Height*2),Color.FromArgb((int)(pulse*(primary?45:80)),Color.White));
+                }
+
+                float focus=Math.Max(.12f,Math.Min(.88f,position.X));
+                using(var edge=new LinearGradientBrush(rect,Color.White,Color.White,LinearGradientMode.Horizontal)){
+                    edge.InterpolationColors=new ColorBlend{
+                        Positions=new[]{0f,focus-.11f,focus,focus+.11f,1f},
+                        Colors=new[]{Color.FromArgb((int)(20*intensity),cyan),Color.FromArgb((int)(170*intensity),cyan),Color.FromArgb((int)(255*intensity),Color.White),Color.FromArgb((int)(165*intensity),violet),Color.FromArgb((int)(20*intensity),violet)}
+                    };
+                    using(var pen=new Pen(edge,Math.Max(1.2f,g.DpiX/96f*1.5f)))g.DrawPath(pen,path);
+                }
+            }
+            g.Restore(state);
+        }
+        static void SoftLight(Graphics g,RectangleF bounds,Color center){
+            using(var ellipse=new GraphicsPath()){
+                ellipse.AddEllipse(bounds);
+                using(var glow=new PathGradientBrush(ellipse)){
+                    glow.CenterColor=center;
+                    glow.SurroundColors=new[]{Color.FromArgb(0,center)};
+                    g.FillPath(glow,ellipse);
+                }
+            }
         }
     }
     internal class GlassMenuRenderer:ToolStripProfessionalRenderer {

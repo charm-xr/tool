@@ -39,8 +39,8 @@ jobs:
           Invoke-TestProcess $setup $setupArgs
 
           $app = Join-Path $installDir 'CleanBox.exe'
-          if ($env:RELEASE_BUILD -eq 'true' -and (Get-Item -LiteralPath $app).VersionInfo.FileVersion -ne '2.1.9.0') {
-              throw 'The installer must contain CleanBox 2.1.9.'
+          if ($env:RELEASE_BUILD -eq 'true' -and (Get-Item -LiteralPath $app).VersionInfo.FileVersion -ne '2.2.2.0') {
+              throw 'The installer must contain CleanBox 2.2.2.'
           }
           $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'CleanBox/CleanBox.lnk'
           $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{A9F6C39D-09D9-4A44-B8C1-0AB5EF945C24}_is1'
@@ -75,7 +75,7 @@ jobs:
           }
           Write-Output 'Installer lifecycle and installed application checks passed.'
         env:
-          RELEASE_BUILD: ${{ github.event.head_commit.message == 'Publish CleanBox 2.1.9' }}
+          RELEASE_BUILD: ${{ github.event.head_commit.message == 'Publish CleanBox 2.2.2' }}
       - uses: actions/upload-artifact@v4
         with:
           name: CleanBox-Setup-Windows-x64
@@ -85,7 +85,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.event.head_commit.message == 'Publish CleanBox 2.1.9'
+    if: github.event.head_commit.message == 'Publish CleanBox 2.2.2'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -110,9 +110,9 @@ jobs:
           sha256sum --check CleanBox-Windows-x64.zip.sha256
 
           cat > "$RUNNER_TEMP/cleanbox-notes.md" <<'EOF'
-          - 修复拖动滚动条时内容延迟更新和滑块回跳。滑块跟随鼠标，内容边拖边刷新。
-          - 横向和纵向滚动条统一适配深浅色，修复拖动时白底和悬停闪烁。
-          - 软件列表使用独立圆角玻璃行，鼠标高光只在当前行内显示。Windows 11 标题栏跟随应用主题。
+          - 新增独立设置页。深色外观、紧凑列表、玻璃质感和弹性动效使用开关，管理员重启入口集中在同一页。
+          - 软件列表支持按类型、发布者和磁盘组合筛选，并可叠加关键词和来源。默认显示主要软件，点击「重置」可查看全部条目。
+          - 设置页每行都有独立的圆角玻璃和鼠标跟光。文字与开关共享行背景，减少重复绘制，改善深浅色下的跟光卡顿。
 
           **Windows x64 安装版**：下载 `CleanBox-Setup-Windows-x64.exe`，双击后按向导安装。
 
@@ -120,8 +120,8 @@ jobs:
 
           两个下载包均附 SHA-256 校验文件。
           EOF
-          gh release create cleanbox-v2.1.9 \
+          gh release create cleanbox-v2.2.2 \
             CleanBox-Setup-Windows-x64.exe CleanBox-Setup-Windows-x64.exe.sha256 \
             CleanBox-Windows-x64.zip CleanBox-Windows-x64.zip.sha256 \
-            --target "$GITHUB_SHA" --title 'CleanBox 2.1.9' \
+            --target "$GITHUB_SHA" --title 'CleanBox 2.2.2' \
             --notes-file "$RUNNER_TEMP/cleanbox-notes.md" --latest

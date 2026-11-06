@@ -57,7 +57,7 @@ namespace CleanBox {
                         box.Hide();box.Show();ScrollSkin.RefreshTree(box);await Task.Delay(100);
                         check(textSkin.NativeBarsAreClipped()&&listSkin.NativeBarsAreClipped(),"Hide/show does not reveal native scrollbar strips");
                         using(var image=new Bitmap(box.Width,box.Height)){
-                            box.DrawToBitmap(image,box.ClientRectangle);image.Save(Path.Combine(Store.Home,"preview","v219-scroll-fixtures-"+(dark?"dark":"light")+".png"),ImageFormat.Png);
+                            box.DrawToBitmap(image,box.ClientRectangle);image.Save(Path.Combine(Store.Home,"preview","v220-scroll-fixtures-"+(dark?"dark":"light")+".png"),ImageFormat.Png);
                             foreach(Control target in new Control[]{text,list,checkedList,wideGrid}){var binding=ScrollSkin.Find(target);foreach(var view in new[]{binding.Vertical,binding.Horizontal,binding.Corner})if(view.Visible)CheckCompositedScroll(box,image,view,dark,check);}
                         }
                         await Task.Delay(100);int idle=textSkin.RefreshCount;textSkin.Vertical.ProbeHover(true);textSkin.Vertical.ProbeHover(false);await Task.Delay(150);

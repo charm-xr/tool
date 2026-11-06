@@ -54,7 +54,7 @@ namespace CleanBox {
                                 check(SameOutside(idle,lit,activeCard),mode+" row light never spills into adjacent rows, gaps or the header");
                                 var corner=new Point(activeCard.Left+2,activeCard.Top+2);
                                 check(idle.GetPixel(corner.X,corner.Y)==lit.GetPixel(corner.X,corner.Y),mode+" row light respects the rounded corner cutout");
-                                lit.Save(Path.Combine(Store.Home,"preview","v219-list-"+(dark?"dark":"light")+"-hover.png"),ImageFormat.Png);
+                                lit.Save(Path.Combine(Store.Home,"preview","v220-list-"+(dark?"dark":"light")+"-hover.png"),ImageFormat.Png);
                             }
                             check(probe.MaterialGeneration==materialGeneration&&probe.Bounds==bounds&&probe.CurrentCell.RowIndex==selected,mode+" list light reuses its material without moving rows or changing selection");
                             var nextRow=probe.GetCellDisplayRectangle(0,3,false);probe.MoveLight(new Point(nextRow.Width/2,nextRow.Top+nextRow.Height/2));
@@ -67,7 +67,7 @@ namespace CleanBox {
                             probe.LeaveLight();await Task.Delay(1100);
                             using(var after=PaintWindowFrame(probe,Color.Lime)){
                                 check(SamePixels(idle,after),mode+" list pointer exit restores exact idle pixels with no residual light");
-                                after.Save(Path.Combine(Store.Home,"preview","v219-list-"+(dark?"dark":"light")+"-idle.png"),ImageFormat.Png);
+                                after.Save(Path.Combine(Store.Home,"preview","v220-list-"+(dark?"dark":"light")+"-idle.png"),ImageFormat.Png);
                             }
                             check(MotionClock.ActiveCount==0,mode+" list light stops its animation timer after exit");
                             Palette.MotionEnabled=false;probe.MoveLight(new Point(row.Width/2,row.Top+row.Height/2));
@@ -86,7 +86,7 @@ namespace CleanBox {
                     var liveGrid=(SmoothGrid)grid;var liveRow=grid.GetCellDisplayRectangle(0,2,false);
                     liveGrid.MoveLight(new Point(liveRow.Left+liveRow.Width/2,liveRow.Top+liveRow.Height/2));
                     for(int frame=0;frame<150;frame++)liveGrid.Advance(1.0/60);
-                    using(var live=PaintWindowFrame(grid,Color.Magenta))live.Save(Path.Combine(Store.Home,"preview","v219-live-rows-"+(dark?"dark":"light")+".png"),ImageFormat.Png);
+                    using(var live=PaintWindowFrame(grid,Color.Magenta))live.Save(Path.Combine(Store.Home,"preview","v220-live-rows-"+(dark?"dark":"light")+".png"),ImageFormat.Png);
                     liveGrid.LeaveLight();liveGrid.Settle();MotionClock.Remove(liveGrid);
                 }
             }finally{Palette.Dark=originalDark;Palette.GlassEnabled=originalGlass;Palette.MotionEnabled=originalMotion;RefreshMaterial();}

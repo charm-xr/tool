@@ -29,7 +29,7 @@ namespace CleanBox {
                 }
             }
             foreach(bool dark in new[]{true,false}){
-                if(Palette.Dark!=dark)themeButton.PerformClick();MotionClock.FinishAll();
+                if(Palette.Dark!=dark)ToggleTheme();MotionClock.FinishAll();
                 foreach(var button in selectionActions.Concat(new[]{quick,filter,themeButton}).Concat(navigation)){
                     using(var first=PaintWindowFrame(button,Color.Magenta))using(var second=PaintWindowFrame(button,Color.Lime))check(SamePixels(first,second)&&CornersMatchParent(button,first),(dark?"Dark":"Light")+" native button repaint clears previous content and matches the parent background: "+button.Text);
                 }
@@ -97,7 +97,7 @@ namespace CleanBox {
                                     TextRenderer.DrawText(g,labels[i],Font,new Rectangle(12,i*probe.Height,Px(130),probe.Height),Palette.Ink,TextFormatFlags.VerticalCenter);
                                     g.DrawImageUnscaled(samples[i],Px(150),i*probe.Height);
                                 }
-                                sheet.Save(Path.Combine(Store.Home,"preview",dark?"v219-light-dark.png":"v219-light-light.png"),ImageFormat.Png);
+                                sheet.Save(Path.Combine(Store.Home,"preview",dark?"v220-light-dark.png":"v220-light-light.png"),ImageFormat.Png);
                             }
                             check(SamePixels(samples[0],samples[5]),(dark?"Dark":"Light")+" pointer exit restores the exact idle frame with no residual light");
                             Palette.MotionEnabled=false;MotionClock.FinishAll();probe.HoverAt(new Point(0,0));
@@ -129,7 +129,7 @@ namespace CleanBox {
         async Task VerifyRepainting(Action<bool,string> check){
             SwitchPage(0);MotionClock.FinishAll();
             foreach(bool dark in new[]{true,false}){
-                if(Palette.Dark!=dark)themeButton.PerformClick();MotionClock.FinishAll();
+                if(Palette.Dark!=dark)ToggleTheme();MotionClock.FinishAll();
                 check(selectionActions.Concat(new[]{quick}).Concat(navigation).All(BackgroundMatchesParent),(dark?"Dark":"Light")+" buttons have the same corner background as their container, with no black rectangles");
             }
             using(var probe=new UiButton{Text="Stable label",Size=new Size(Px(210),Px(42)),Location=new Point(Px(180),Px(10))}){
@@ -143,7 +143,7 @@ namespace CleanBox {
                     check(contained,"Partial translated button repaint never writes text or pixels outside its clipping rectangle");
                 }
                 using(var baseline=PaintFrame(probe,Color.Magenta,true)){
-                    for(int cycle=0;cycle<10;cycle++){themeButton.PerformClick();await Task.Delay(20);themeButton.PerformClick();await Task.Delay(20);}
+                    for(int cycle=0;cycle<10;cycle++){ToggleTheme();await Task.Delay(20);ToggleTheme();await Task.Delay(20);}
                     MotionClock.FinishAll();
                     using(var current=PaintFrame(probe,Color.Lime,true))check(SamePixels(baseline,current),"Ten dark/light round trips return identical button pixels");
                 }

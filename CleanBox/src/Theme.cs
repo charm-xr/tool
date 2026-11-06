@@ -108,7 +108,7 @@ namespace CleanBox {
     internal class SurfacePanel:CanvasPanel {
         public SurfacePanel(){Padding=new Padding(18);Tag="surface";}
         protected override void OnPaintBackground(PaintEventArgs e){base.OnPaintBackground(e);PaintMaterial(e.Graphics);}
-        internal void PaintMaterial(Graphics g){float dpi=g.DpiX/96f;GlassPaint.Surface(this,g,new RectangleF(3*dpi,3*dpi,Math.Max(1,Width-6*dpi),Math.Max(1,Height-7*dpi)),22*dpi,0);}
+        internal virtual void PaintMaterial(Graphics g){float dpi=g.DpiX/96f;GlassPaint.Surface(this,g,new RectangleF(3*dpi,3*dpi,Math.Max(1,Width-6*dpi),Math.Max(1,Height-7*dpi)),22*dpi,0);}
     }
     internal class ChoiceButton:UiButton {
         public readonly List<object> Items=new List<object>();readonly ContextMenuStrip choices=new ContextMenuStrip();int selected=-1;public event EventHandler SelectedIndexChanged;

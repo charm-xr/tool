@@ -16,24 +16,20 @@ namespace CleanBox {
             var sidebarFrame=new CanvasPanel{Dock=DockStyle.Left,Width=204,Padding=new Padding(12,16,4,16)};
             sidebar=new SurfacePanel{Dock=DockStyle.Fill,Padding=new Padding(13,24,13,16),Tag="sidebar"};sidebarFrame.Controls.Add(sidebar);
             var brand=new Label{Text="清理匣",Dock=DockStyle.Top,Height=43,Font=new Font(Font.FontFamily,22,FontStyle.Bold),Tag="accent",TextAlign=ContentAlignment.MiddleLeft};
-            var brandSub=TextLabel("CleanBox  2.1.9",34,"muted");var nav=new CanvasFlowPanel{Dock=DockStyle.Top,Height=160,FlowDirection=FlowDirection.TopDown,WrapContents=false};
+            var brandSub=TextLabel("CleanBox  2.2.2",34,"muted");var nav=new CanvasFlowPanel{Dock=DockStyle.Top,Height=160,FlowDirection=FlowDirection.TopDown,WrapContents=false};
             navigation=new UiButton[3];string[] names={"软件管理","文件解锁","操作记录"},glyphs={"\uE8A5","\uE785","\uE81C"};
             for(int i=0;i<3;i++){int target=i;var b=new UiButton{Text=names[i],Glyph=glyphs[i],Kind="nav",AutoSize=false,Width=162,Height=45,Margin=new Padding(0,0,0,6)};b.Click+=(s,e)=>SwitchPage(target);navigation[i]=b;nav.Controls.Add(b);}
             nav.Resize+=(s,e)=>{foreach(var b in navigation)b.Width=nav.ClientSize.Width;};
-            var options=new CanvasPanel{Dock=DockStyle.Bottom,Height=252,Tag="sidebar"};
-            themeButton=Button("深色外观",ToggleTheme);themeButton.Dock=DockStyle.Top;themeButton.AutoSize=false;themeButton.Height=40;
-            densityButton=Button("紧凑列表",()=>{compact=!compact;UpdateDensity();SavePreferences();});densityButton.Dock=DockStyle.Top;densityButton.AutoSize=false;densityButton.Height=40;
-            glassButton=Button("玻璃质感：开启",ToggleGlass);glassButton.Dock=DockStyle.Top;glassButton.AutoSize=false;glassButton.Height=40;
-            motionButton=Button("弹性动效：开启",ToggleMotion);motionButton.Dock=DockStyle.Top;motionButton.AutoSize=false;motionButton.Height=40;
-            adminButton=Button(Native.IsAdmin?"已是管理员":"管理员模式",Elevate);adminButton.Dock=DockStyle.Top;adminButton.AutoSize=false;adminButton.Height=38;adminButton.Enabled=!Native.IsAdmin;
+            var options=new CanvasPanel{Dock=DockStyle.Bottom,Height=96,Tag="sidebar"};
+            settingsButton=new UiButton{Text="设置",Glyph="\uE713",Kind="nav",Dock=DockStyle.Top,Height=45};settingsButton.Click+=(s,e)=>SwitchPage(3);
             var permissions=TextLabel(Native.IsAdmin?"管理员权限":"普通权限 · 按需提权",37,"muted");permissions.Dock=DockStyle.Bottom;
-            options.Controls.Add(permissions);options.Controls.Add(adminButton);options.Controls.Add(motionButton);options.Controls.Add(glassButton);options.Controls.Add(densityButton);options.Controls.Add(themeButton);
+            options.Controls.Add(permissions);options.Controls.Add(settingsButton);
             sidebar.Controls.Add(nav);sidebar.Controls.Add(brandSub);sidebar.Controls.Add(brand);sidebar.Controls.Add(options);
             var foot=new CanvasPanel{Dock=DockStyle.Bottom,Height=38,Padding=new Padding(18,8,18,7),Tag="surface"};
             progress=new ProgressBar{Dock=DockStyle.Right,Width=100,Style=ProgressBarStyle.Marquee,Visible=false};status=new Label{Dock=DockStyle.Fill,AutoEllipsis=true,Text="准备就绪",Tag="muted"};
             cancel=Button("取消任务",()=>{if(cts!=null)cts.Cancel();});cancel.AutoSize=false;cancel.Dock=DockStyle.Right;cancel.Width=96;cancel.MinimumSize=Size.Empty;cancel.Height=24;cancel.Visible=false;
             foot.Controls.Add(status);foot.Controls.Add(cancel);foot.Controls.Add(progress);
-            host=new CanvasPanel{Dock=DockStyle.Fill};pages=new[]{BuildCatalog(),BuildFiles(),BuildLog()};foreach(var p in pages)host.Controls.Add(p);
+            host=new CanvasPanel{Dock=DockStyle.Fill};pages=new[]{BuildCatalog(),BuildFiles(),BuildLog(),BuildSettings()};foreach(var p in pages)host.Controls.Add(p);
             Controls.Add(host);Controls.Add(sidebarFrame);Controls.Add(foot);
         }
         Panel BuildCatalog(){
@@ -43,16 +39,18 @@ namespace CleanBox {
             scanMenu=new ContextMenuStrip();scanMenu.Items.Add("基础扫描   F5",null,async(s,e)=>await QuickScan());scanMenu.Items.Add("全盘发现…",null,async(s,e)=>await ChooseDrives());scanMenu.Items.Add("扫描指定文件夹…",null,async(s,e)=>await ChooseFolder());scanMenu.Items.Add(new ToolStripSeparator());scanMenu.Items.Add("导出当前清单…",null,(s,e)=>Export());
             catalogBody=new CanvasPanel{Dock=DockStyle.Fill};catalogBody.Resize+=(s,e)=>ArrangeCatalog();
             var listing=new CanvasPanel{Dock=DockStyle.Fill,Padding=new Padding(0,0,16,0)};
-            var filters=new CanvasTablePanel{Dock=DockStyle.Top,Height=43,ColumnCount=2,RowCount=1};filters.RowStyles.Add(new RowStyle(SizeType.Percent,100));filters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));filters.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,153));
+            var filters=new CanvasTablePanel{Dock=DockStyle.Top,Height=43,ColumnCount=3,RowCount=1};filters.RowStyles.Add(new RowStyle(SizeType.Percent,100));filters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));filters.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,132));filters.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,96));
             search=new TextBox{Dock=DockStyle.Fill,Margin=new Padding(0,5,12,4),AccessibleName="搜索名称、发布者或路径"};search.TextChanged+=(s,e)=>ApplyFilter();
             filter=new ChoiceButton{Dock=DockStyle.Fill,Margin=new Padding(0,0,0,0)};filter.Items.AddRange(new object[]{"全部来源","已安装","应用商店","绿色候选","快捷方式","磁盘发现"});filter.SelectedIndex=0;filter.SelectedIndexChanged+=(s,e)=>ApplyFilter();filters.Controls.Add(Input(search,new Padding(0,3,12,3)),0,0);filters.Controls.Add(filter,1,0);
+            advancedButton=new UiButton{Text="筛选 · 1",Dock=DockStyle.Fill,Margin=new Padding(6,0,0,0)};advancedButton.Click+=(s,e)=>ToggleFilters();filters.Controls.Add(advancedButton,2,0);
+            var advanced=BuildFilters();var summary=BuildFilterSummary();
             var searchHint=TextLabel("搜索名称、发布者或路径  ·  Ctrl + F",25,"muted");
             var counts=new CanvasFlowPanel{Dock=DockStyle.Top,Height=35,WrapContents=false};totalLabel=new Label{AutoSize=true,Margin=new Padding(0,4,15,0),Tag="muted"};installedLabel=new Label{AutoSize=true,Margin=new Padding(0,4,15,0),Tag="muted"};foundLabel=new Label{AutoSize=true,Margin=new Padding(0,4,0,0),Tag="accent"};counts.Controls.AddRange(new Control[]{totalLabel,installedLabel,foundLabel});
             grid=new SmoothGrid{Dock=DockStyle.Fill,ReadOnly=true,AllowUserToAddRows=false,AllowUserToDeleteRows=false,AllowUserToResizeRows=false,RowHeadersVisible=false,SelectionMode=DataGridViewSelectionMode.FullRowSelect,MultiSelect=false,BorderStyle=BorderStyle.None,AutoSizeColumnsMode=DataGridViewAutoSizeColumnsMode.Fill,EnableHeadersVisualStyles=false,ColumnHeadersBorderStyle=DataGridViewHeaderBorderStyle.None,CellBorderStyle=DataGridViewCellBorderStyle.SingleHorizontal};
             AddColumn("软件 / 发布者",62,180);AddColumn("版本",18,70);AddColumn("来源",20,95);grid.SelectionChanged+=(s,e)=>ShowSelection();grid.CellDoubleClick+=(s,e)=>{if(e.RowIndex>=0)OpenSelected();};grid.CellPainting+=PaintAppCell;grid.Sorted+=(s,e)=>ShowSelection();
             var gridHost=new SurfacePanel{Dock=DockStyle.Fill,Padding=new Padding(10,13,10,13)};emptyList=new Label{Text="正在读取软件清单…",Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter,Tag="muted",Visible=false};gridHost.Controls.Add(grid);gridHost.Controls.Add(emptyList);
             listCount=TextLabel("准备扫描",27,"muted");listCount.Dock=DockStyle.Bottom;
-            listing.Controls.Add(gridHost);listing.Controls.Add(listCount);listing.Controls.Add(counts);listing.Controls.Add(filters);listing.Controls.Add(searchHint);
+            listing.Controls.Add(gridHost);listing.Controls.Add(listCount);listing.Controls.Add(counts);listing.Controls.Add(summary);listing.Controls.Add(advanced);listing.Controls.Add(filters);listing.Controls.Add(searchHint);
             detailPanel=BuildDetail();detailPanel.Dock=DockStyle.Right;detailPanel.Width=292;catalogBody.Controls.Add(listing);catalogBody.Controls.Add(detailPanel);
             p.Controls.Add(catalogBody);p.Controls.Add(heading);return p;
         }

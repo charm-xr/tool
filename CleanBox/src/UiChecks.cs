@@ -13,6 +13,8 @@ namespace CleanBox {
             bool originalDark=Palette.Dark,originalCompact=compact,originalGlass=Palette.GlassEnabled,originalMotion=Palette.MotionEnabled;loadingPreferences=true;
             try{
                 check(apps.Count>0,"Live inventory populated");check(grid.Rows.Count==apps.Count,"Inventory and grid agree");check(sidebar.Width>=Px(170),"Sidebar scales to the screen DPI");
+                VerifySettingsAndFilters(check);
+                await VerifySettingsRowLight(check);
                 for(int i=0;i<3;i++){navigation[i].PerformClick();check(currentPage==i&&pages[i].Visible&&navigation[i].Selected,"Sidebar navigates to page "+i);}SwitchPage(0);
                 search.Text="__CleanBox_No_Match_"+Guid.NewGuid().ToString("N");check(grid.Rows.Cast<DataGridViewRow>().All(r=>!r.Visible)&&emptyList.Visible,"Empty search has a visible explanation");check(Selected()==null&&selectionActions.All(b=>!b.Enabled),"Empty results clear stale selection and disable actions");search.Clear();
                 filter.SelectedIndex=1;check(grid.Rows.Cast<DataGridViewRow>().Where(r=>r.Visible).All(r=>((AppEntry)r.Tag).RegistryPath.Length>0),"Installed source filter excludes candidates");
@@ -45,7 +47,7 @@ namespace CleanBox {
                 animationProbe.PerformClick();Palette.MotionEnabled=false;MotionClock.FinishAll();check(MotionClock.ActiveCount==0&&animationProbe.VisualScale==1,"Disabling motion immediately stops animations");animationProbe.Dispose();Palette.MotionEnabled=true;
                 SwitchPage(1);SwitchPage(2);SwitchPage(0);await Task.Delay(1000);check(currentPage==0&&pages[0].Visible&&MotionClock.ActiveCount==0,"Rapid navigation settles on the requested page and stops the clock");
                 Palette.GlassEnabled=true;Refresh();int generation=Scene.Generation;Refresh();check(Scene.Generation==generation,"Glass backdrop is cached between repaint frames");
-                glassButton.PerformClick();check(!Palette.GlassEnabled,"Glass toggle switches to the solid fallback");glassButton.PerformClick();check(Palette.GlassEnabled,"Glass toggle restores the material");
+                SwitchPage(3);glassButton.PerformClick();check(!Palette.GlassEnabled,"Glass toggle switches to the solid fallback");glassButton.PerformClick();check(Palette.GlassEnabled,"Glass toggle restores the material");SwitchPage(0);
                 check(scanMenu.Renderer is GlassMenuRenderer&&appMenu.Renderer is GlassMenuRenderer,"Action menus use the unified glass renderer");
                 check(search.BorderStyle==BorderStyle.None&&search.Parent is InputFrame&&pathBox.Parent is InputFrame,"Native editable fields sit inside rounded input surfaces");
                 await VerifyRepainting(check);
@@ -55,17 +57,17 @@ namespace CleanBox {
                 await VerifyScrollbars(check);
                 await Task.Delay(900);Directory.CreateDirectory(Path.Combine(Store.Home,"preview"));
                 Action<string> capture=name=>{PerformLayout();ScrollSkin.RefreshTree(this);Refresh();using(var bitmap=new Bitmap(Width,Height)){DrawToBitmap(bitmap,new Rectangle(Point.Empty,Size));bitmap.Save(Path.Combine(Store.Home,"preview",name+".png"),System.Drawing.Imaging.ImageFormat.Png);}};
-                Palette.Dark=false;ApplyTheme(this);StyleGrid();UpdateThemeCaption();ClientSize=new Size(Px(1220),Px(780));SwitchPage(0);MotionClock.FinishAll();capture("v219-software-light");
+                Palette.Dark=false;ApplyTheme(this);StyleGrid();UpdateThemeCaption();ClientSize=new Size(Px(1220),Px(780));SwitchPage(0);MotionClock.FinishAll();capture("v220-software-light");
                 check(detailPanel.Left>=grid.Parent.Right&&detailPanel.Right<=catalogBody.ClientSize.Width,"List and detail panel do not overlap");
                 check(quick.Left>=0&&quick.Right<=quick.Parent.ClientSize.Width,"Scan action stays inside the heading");
                 check(search.Parent.Bottom<=search.Parent.Parent.ClientSize.Height&&search.Top>=0&&search.Bottom<=search.Parent.ClientSize.Height&&filter.Bottom<=filter.Parent.ClientSize.Height,"Search field and source filter fit the visible row at screen DPI");
-                ClientSize=new Size(Px(1024),Px(662));PerformLayout();ArrangeCatalog();capture("v219-software-compact");
+                ClientSize=new Size(Px(1024),Px(662));PerformLayout();ArrangeCatalog();capture("v220-software-compact");
                 check(grid.Width>=Px(300)&&detail.Width>Px(180)&&detailTitle.Right<=detailTitle.Parent.ClientSize.Width,"Narrow window preserves usable list and complete detail layout");
-                SwitchPage(1);pathBox.Text="";MotionClock.FinishAll();capture("v219-file-tools");check(pathBox.Right<=pathBox.Parent.ClientSize.Width&&lockList.Height>=Px(80),"Narrow file page keeps target and results visible");
+                SwitchPage(1);pathBox.Text="";MotionClock.FinishAll();capture("v220-file-tools");check(pathBox.Right<=pathBox.Parent.ClientSize.Width&&lockList.Height>=Px(80),"Narrow file page keeps target and results visible");
                 check(pathBox.Parent.Bottom<=pathBox.Parent.Parent.ClientSize.Height&&pathBox.Top>=0&&pathBox.Bottom<=pathBox.Parent.ClientSize.Height,"Path entry fits inside its visible rounded surface");
                 foreach(var b in selectionActions)check(b.Top>=0&&b.Bottom<=b.Parent.ClientSize.Height&&b.Right<=b.Parent.ClientSize.Width,"Detail action fits its container: "+b.Text);
-                Palette.Dark=true;ApplyTheme(this);StyleGrid();UpdateThemeCaption();SwitchPage(0);MotionClock.FinishAll();capture("v219-software-dark");check(grid.BackgroundColor==Palette.Surface&&detail.BackColor==Palette.Surface&&Ink.GetBrightness()>.5,"Dark theme covers data surfaces and text");
-                SwitchPage(1);MotionClock.FinishAll();capture("v219-file-tools-dark");Palette.GlassEnabled=false;ApplyTheme(this);StyleGrid();capture("v219-solid-fallback");
+                Palette.Dark=true;ApplyTheme(this);StyleGrid();UpdateThemeCaption();SwitchPage(0);MotionClock.FinishAll();capture("v220-software-dark");check(grid.BackgroundColor==Palette.Surface&&detail.BackColor==Palette.Surface&&Ink.GetBrightness()>.5,"Dark theme covers data surfaces and text");
+                SwitchPage(1);MotionClock.FinishAll();capture("v220-file-tools-dark");Palette.GlassEnabled=false;ApplyTheme(this);StyleGrid();capture("v220-solid-fallback");
                 result.Add("UI checks changed only their own temporary fixture and helper process; no installed software, user files or reboot queue modified.");File.WriteAllLines(Path.Combine(Store.Data,"ui-results.txt"),result,System.Text.Encoding.UTF8);
             }finally{MotionClock.FinishAll();Palette.Dark=originalDark;compact=originalCompact;Palette.GlassEnabled=originalGlass;Palette.MotionEnabled=originalMotion;loadingPreferences=false;}
         }

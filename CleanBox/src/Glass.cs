@@ -65,8 +65,11 @@ namespace CleanBox {
         // Compose only ancestor materials, never their child controls or text. Native
         // ButtonBase transparency can leave undefined pixels during partial repaints.
         public static void Underlay(Control control,Graphics g){
-            Backdrop(control,g,false);Point origin=Origin(control);var ancestors=new Stack<SurfacePanel>();
-            for(Control parent=control.Parent;parent!=null;parent=parent.Parent){var surface=parent as SurfacePanel;if(surface!=null)ancestors.Push(surface);}
+            Point origin=Origin(control);var ancestors=new Stack<SurfacePanel>();bool cachedRow=false;
+            for(Control parent=control.Parent;parent!=null;parent=parent.Parent){var surface=parent as SurfacePanel;if(surface!=null)ancestors.Push(surface);if(parent is SettingsGlassRow){cachedRow=true;break;}}
+            // Settings rows contain the complete composited background. Their
+            // descendants share that frame instead of replaying every ancestor.
+            if(!cachedRow)Backdrop(control,g,false);
             foreach(var surface in ancestors){Point at=Origin(surface);var state=g.Save();g.TranslateTransform(at.X-origin.X,at.Y-origin.Y);surface.PaintMaterial(g);g.Restore(state);}
         }
         public static void Backdrop(Control control,Graphics g,bool frosted){

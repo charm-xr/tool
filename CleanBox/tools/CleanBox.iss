@@ -1,6 +1,7 @@
 ﻿#define AppName "CleanBox"
 #define AppVersion GetVersionNumbersString(PayloadDir + "\CleanBox.exe")
 #define DisplayVersion Copy(AppVersion, 1, RPos(".", AppVersion) - 1)
+#define ShortcutIconName "cleanbox-crystal.ico"
 
 [Setup]
 AppId={{A9F6C39D-09D9-4A44-B8C1-0AB5EF945C24}
@@ -19,8 +20,10 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
-UninstallDisplayIcon={app}\CleanBox.exe
+UninstallDisplayIcon={app}\assets\{#ShortcutIconName}
 SetupIconFile={#PayloadDir}\assets\cleanbox.ico
+; Refresh Explorer's cached icons after an upgrade.
+ChangesAssociations=yes
 OutputBaseFilename=CleanBox-Setup-Windows-x64
 VersionInfoVersion={#AppVersion}
 VersionInfoDescription=CleanBox Windows Installer
@@ -46,10 +49,11 @@ Source: "{#PayloadDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\使用说明.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\assets\cleanbox.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
+Source: "{#PayloadDir}\assets\cleanbox.ico"; DestDir: "{app}\assets"; DestName: "{#ShortcutIconName}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\CleanBox"; Filename: "{app}\CleanBox.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\CleanBox"; Filename: "{app}\CleanBox.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\CleanBox"; Filename: "{app}\CleanBox.exe"; WorkingDir: "{app}"; IconFilename: "{app}\assets\{#ShortcutIconName}"; IconIndex: 0
+Name: "{autodesktop}\CleanBox"; Filename: "{app}\CleanBox.exe"; WorkingDir: "{app}"; IconFilename: "{app}\assets\{#ShortcutIconName}"; IconIndex: 0; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\CleanBox.exe"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent

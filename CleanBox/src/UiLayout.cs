@@ -16,7 +16,7 @@ namespace CleanBox {
             var sidebarFrame=new CanvasPanel{Dock=DockStyle.Left,Width=204,Padding=new Padding(12,16,4,16)};
             sidebar=new SurfacePanel{Dock=DockStyle.Fill,Padding=new Padding(13,24,13,16),Tag="sidebar"};sidebarFrame.Controls.Add(sidebar);
             var brand=new Label{Text="清理匣",Dock=DockStyle.Top,Height=43,Font=new Font(Font.FontFamily,22,FontStyle.Bold),Tag="accent",TextAlign=ContentAlignment.MiddleLeft};
-            var brandSub=TextLabel("CleanBox  2.4.1",34,"muted");var nav=new CanvasFlowPanel{Dock=DockStyle.Top,Height=215,FlowDirection=FlowDirection.TopDown,WrapContents=false};
+            var brandSub=TextLabel("CleanBox  2.4.2",34,"muted");var nav=new CanvasFlowPanel{Dock=DockStyle.Top,Height=215,FlowDirection=FlowDirection.TopDown,WrapContents=false};
             navigation=new UiButton[3];string[] names={"软件管理","文件解锁","操作记录"},glyphs={"\uE8A5","\uE785","\uE81C"};
             for(int i=0;i<3;i++){int target=i;var b=new UiButton{Text=names[i],Glyph=glyphs[i],Kind="nav",AutoSize=false,Width=162,Height=45,Margin=new Padding(0,0,0,6)};b.Click+=(s,e)=>SwitchPage(target);navigation[i]=b;nav.Controls.Add(b);}
             usageNavigation=new UiButton{Text="磁盘占用分析",Glyph="\uEDA2",Kind="nav",Width=162,Height=45,Margin=new Padding(0,0,0,6)};usageNavigation.Click+=(s,e)=>SwitchPage(4);nav.Controls.Add(usageNavigation);

@@ -1,12 +1,14 @@
 ﻿<p align="center"><img src="assets/cleanbox.png" width="96" alt="CleanBox 图标"></p>
 
-# 清理匣 CleanBox 2.4.1
+# 清理匣 CleanBox 2.4.2
 
 Windows 软件发现、卸载与占用文件处理工具。补充系统卸载列表之外的程序候选，并帮助定位“文件正在使用，无法删除”的原因。
 
 采用 C# / Windows Forms，面向 Windows 10/11 x64，依赖 .NET Framework 4.8。程序运行不需要 Python、Node.js 或额外的开发环境。
 
 ## 功能
+
+2.4.2 启用「晶环」图标，统一程序文件、窗口、安装程序及安装后的快捷方式。图标提供 16–256 像素共 10 种尺寸；桌面和开始菜单快捷方式明确使用新图标文件，安装或覆盖安装后刷新 Windows 图标缓存。
 
 2.4.1 将任务进度指示改为圆角玻璃轨道与青绿色流动高光，适配深浅色；关闭动效时静止显示，任务结束、隐藏或窗口最小化时停止动画。
 
@@ -99,7 +101,7 @@ Windows 软件发现、卸载与占用文件处理工具。补充系统卸载列
 
 构建脚本使用 Windows 自带的 Framework C# 编译器，输出 `CleanBox.exe`。需要机器上存在 `.NET Framework 4.8` 及其 Framework 编译器；无需安装 .NET SDK 或还原第三方运行库。
 
-已提交应用图标，因此普通构建不需要 Python。只有重新生成图标时才需要 Pillow：
+已提交「晶环」应用图标，因此普通构建不需要 Python。`assets/cleanbox.png` 是图标原图；以下命令使用 Pillow 将它导出为包含 16–256 像素共 10 种尺寸的 Windows 图标，供程序、窗口及安装包共同使用：
 
 ```powershell
 python -m pip install Pillow
@@ -172,4 +174,4 @@ CleanBox.exe.config
 
 ## 许可证
 
-[MIT](LICENSE)。图标由本项目的 `tools/make_icon.py` 生成。Windows API 与 .NET Framework 由 Microsoft 提供，遵循其各自条款。
+[MIT](LICENSE)。「晶环」图标使用图像生成工具设计，`tools/make_icon.py` 负责从原图导出 Windows 图标。Windows API 与 .NET Framework 由 Microsoft 提供，遵循其各自条款。

@@ -35,20 +35,59 @@ jobs:
               if ($process.ExitCode -ne 0) { throw "$File exited with code $($process.ExitCode)" }
           }
 
-          $setupArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LANG=zhcn', ('/DIR="{0}"' -f $installDir))
+          $setupArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LANG=zhcn', '/TASKS=desktopicon', ('/DIR="{0}"' -f $installDir))
           Invoke-TestProcess $setup $setupArgs
 
           $app = Join-Path $installDir 'CleanBox.exe'
-          if ($env:RELEASE_BUILD -eq 'true' -and (Get-Item -LiteralPath $app).VersionInfo.FileVersion -ne '2.4.1.0') {
-              throw 'The installer must contain CleanBox 2.4.1.'
+          if ($env:RELEASE_BUILD -eq 'true' -and (Get-Item -LiteralPath $app).VersionInfo.FileVersion.Trim() -ne '2.4.2.0') {
+              throw 'The installer must contain CleanBox 2.4.2.'
           }
           $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'CleanBox/CleanBox.lnk'
+          $desktopShortcut = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'CleanBox.lnk'
+          $installedIcon = Join-Path $installDir 'assets/cleanbox-crystal.ico'
           $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{A9F6C39D-09D9-4A44-B8C1-0AB5EF945C24}_is1'
           $uninstallEntry = Get-ItemProperty -LiteralPath $uninstallKey
           $uninstaller = $uninstallEntry.UninstallString.Trim('"')
-          $target = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut).TargetPath
-          if ($target -ne $app -or $uninstallEntry.DisplayName -notlike 'CleanBox*') {
-              throw 'The Start menu shortcut or uninstall entry is incorrect.'
+          $shell = New-Object -ComObject WScript.Shell
+          function Assert-ShortcutIcons {
+              foreach ($linkPath in @($shortcut, $desktopShortcut)) {
+                  if (-not (Test-Path -LiteralPath $linkPath)) { throw "Missing shortcut: $linkPath" }
+                  $link = $shell.CreateShortcut($linkPath)
+                  $location = $link.IconLocation
+                  $separator = $location.LastIndexOf(',')
+                  if ($separator -lt 0) { throw "Missing explicit icon index: $linkPath" }
+                  $iconPath = $location.Substring(0, $separator).Trim().Trim('"')
+                  $iconIndex = $location.Substring($separator + 1).Trim()
+                  if ($link.TargetPath -ne $app -or $link.WorkingDirectory -ne $installDir -or $iconPath -ne $installedIcon -or $iconIndex -ne '0') {
+                      throw "Shortcut target or crystal icon is incorrect: $linkPath"
+                  }
+              }
+          }
+          Assert-ShortcutIcons
+          if ($uninstallEntry.DisplayName -notlike 'CleanBox*' -or $uninstallEntry.DisplayIcon -ne $installedIcon) {
+              throw 'The uninstall entry does not use the crystal icon.'
+          }
+          $expectedIconHash = (Get-FileHash -LiteralPath 'assets/cleanbox.ico').Hash
+          foreach ($iconPath in @($installedIcon, (Join-Path $installDir 'assets/cleanbox.ico'))) {
+              if ((Get-FileHash -LiteralPath $iconPath).Hash -ne $expectedIconHash) { throw "Incorrect installed icon: $iconPath" }
+          }
+          Add-Type -AssemblyName System.Drawing
+          foreach ($exe in @($app, $setup)) {
+              $actualIcon = [Drawing.Icon]::ExtractAssociatedIcon($exe)
+              $expectedIcon = [Drawing.Icon]::new($installedIcon, $actualIcon.Size)
+              $actualBitmap = $actualIcon.ToBitmap()
+              $expectedBitmap = $expectedIcon.ToBitmap()
+              try {
+                  for ($y = 0; $y -lt $actualBitmap.Height; $y++) {
+                      for ($x = 0; $x -lt $actualBitmap.Width; $x++) {
+                          if ($actualBitmap.GetPixel($x, $y).ToArgb() -ne $expectedBitmap.GetPixel($x, $y).ToArgb()) {
+                              throw "Embedded icon does not match the approved artwork: $exe"
+                          }
+                      }
+                  }
+              } finally {
+                  $actualBitmap.Dispose(); $expectedBitmap.Dispose(); $actualIcon.Dispose(); $expectedIcon.Dispose()
+              }
           }
 
           $portable = Join-Path $env:RUNNER_TEMP 'CleanBox Portable Reference'
@@ -61,21 +100,28 @@ jobs:
 
           $preferences = Join-Path $installDir 'data/ui-preferences.txt'
           Set-Content -LiteralPath $preferences -Value 'theme=dark'
+          # Upgrading must replace shortcuts that previously inherited the EXE icon.
+          foreach ($linkPath in @($shortcut, $desktopShortcut)) {
+              $link = $shell.CreateShortcut($linkPath)
+              $link.IconLocation = "$app,0"
+              $link.Save()
+          }
           Invoke-TestProcess $setup $setupArgs
+          Assert-ShortcutIcons
           if ((Get-Content -LiteralPath $preferences) -ne 'theme=dark') {
               throw 'Reinstall changed user preferences.'
           }
 
           Invoke-TestProcess $uninstaller @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
-          foreach ($path in @($app, $shortcut, $uninstallKey)) {
+          foreach ($path in @($app, $shortcut, $desktopShortcut, $installedIcon, $uninstallKey)) {
               if (Test-Path -LiteralPath $path) { throw "Uninstall left $path" }
           }
           if ((Get-Content -LiteralPath $preferences) -ne 'theme=dark') {
               throw 'Uninstall changed user preferences.'
           }
-          Write-Output 'Installer lifecycle and installed application checks passed.'
+          Write-Output 'Installer lifecycle, embedded icons, desktop and Start menu shortcut checks passed.'
         env:
-          RELEASE_BUILD: ${{ github.event.head_commit.message == 'Publish CleanBox 2.4.1' }}
+          RELEASE_BUILD: ${{ github.event.head_commit.message == 'Publish CleanBox 2.4.2' }}
       - uses: actions/upload-artifact@v4
         with:
           name: CleanBox-Setup-Windows-x64
@@ -85,7 +131,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.event.head_commit.message == 'Publish CleanBox 2.4.1'
+    if: github.event.head_commit.message == 'Publish CleanBox 2.4.2'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -110,20 +156,19 @@ jobs:
           sha256sum --check CleanBox-Windows-x64.zip.sha256
 
           cat > "$RUNNER_TEMP/cleanbox-notes.md" <<'EOF'
-          - 新增磁盘占用分析。可选择磁盘或文件夹，按大小查看目录、找出最大的 200 个文件，并转到文件解锁页。
-          - 卸载残留核对任务可跨重启续办，主动结束时才移除。
-          - 软件大小支持分段筛选和后台重算。实测结果与时间跨刷新保留，版本或路径变化时标为待重算，部分统计单独筛选。
-          - 搜索刷新保留仍符合条件的选中项和滚动位置。
-          - 任务进度条采用圆角玻璃轨道和青绿色流光，适配深浅色与动效开关。
+          - 启用全新青绿玻璃「晶环」图标，统一程序、窗口、安装包与系统卸载列表。
+          - 安装后的桌面和开始菜单快捷方式明确使用新图标文件；覆盖安装会更新旧快捷方式并通知 Windows 刷新图标显示。
+          - 图标包含 16–256 像素共 10 种尺寸，兼容 .NET Framework 和不同显示缩放。
+          - 保留磁盘占用分析、残留核对续办、软件大小实测与圆角流光进度条等功能。
 
-          **Windows x64 安装版**：下载 `CleanBox-Setup-Windows-x64.exe`，双击后按向导安装。
+          **Windows x64 安装版**：下载 `CleanBox-Setup-Windows-x64.exe`，双击后按向导安装。需要桌面入口时，勾选「创建桌面快捷方式」。
 
           **便携版**：下载 `CleanBox-Windows-x64.zip`，解压后打开 `CleanBox.exe`。
 
           两个下载包均附 SHA-256 校验文件。
           EOF
-          gh release create cleanbox-v2.4.1 \
+          gh release create cleanbox-v2.4.2 \
             CleanBox-Setup-Windows-x64.exe CleanBox-Setup-Windows-x64.exe.sha256 \
             CleanBox-Windows-x64.zip CleanBox-Windows-x64.zip.sha256 \
-            --target "$GITHUB_SHA" --title 'CleanBox 2.4.1' \
+            --target "$GITHUB_SHA" --title 'CleanBox 2.4.2' \
             --notes-file "$RUNNER_TEMP/cleanbox-notes.md" --latest

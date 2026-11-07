@@ -1,15 +1,19 @@
 from pathlib import Path
-from PIL import Image, ImageDraw
+from PIL import Image
 
 root = Path(__file__).resolve().parents[1]
 out = root / 'assets'
-out.mkdir(exist_ok=True)
-im = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
-d = ImageDraw.Draw(im)
-d.rounded_rectangle((4, 4, 252, 252), radius=52, fill='#17283d')
-d.rounded_rectangle((49, 86, 207, 197), radius=18, fill='#00a69a')
-d.rounded_rectangle((91, 54, 165, 108), radius=16, outline='#e7fffb', width=13)
-d.rounded_rectangle((40, 88, 216, 126), radius=12, fill='#def9f4')
-d.rounded_rectangle((115, 113, 141, 146), radius=6, fill='#17283d')
-im.save(out / 'cleanbox.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
-im.save(out / 'cleanbox.png')
+
+# Keep the approved artwork as the source of truth. This only exports the
+# Windows icon container; it never redraws or overwrites the source PNG.
+sizes = [(size, size) for size in (16, 20, 24, 32, 40, 48, 64, 96, 128, 256)]
+with Image.open(out / 'cleanbox.png') as source:
+    if source.width != source.height or source.width < 256:
+        raise ValueError('The source icon must be square and at least 256 pixels.')
+    with source.convert('RGBA') as icon:
+        # DIB frames also render correctly in .NET Framework's Icon.ToBitmap,
+        # which can misread PNG-compressed frames in a multi-size ICO.
+        icon.save(out / 'cleanbox.ico', format='ICO', sizes=sizes,
+                  bitmap_format='bmp')
+
+print('Exported assets/cleanbox.ico with 10 sizes (16-256 px).')

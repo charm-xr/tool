@@ -35,7 +35,31 @@ namespace CleanBox {
             var list=new ListBox{Dock=DockStyle.Fill,HorizontalScrollbar=true};list.Items.AddRange(paths.Cast<object>().ToArray());
             var note=new Label{Dock=DockStyle.Top,Height=103,Padding=new Padding(15),Text="下列是安装位置和名称完全匹配的配置目录，不代表一定是残留。\r\n请先正常卸载；配置目录可能包含账号、设置和个人数据。\r\n逐个选择后进入文件处理页，核对完整路径再删除。不会自动勾选或删除。"};
             var actions=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=52,Padding=new Padding(10)};actions.Controls.Add(Button("打开选中位置",()=>{if(list.SelectedItem!=null)OpenPath(list.SelectedItem.ToString());}));actions.Controls.Add(Button("处理选中目录",()=>{if(list.SelectedItem!=null){pathBox.Text=list.SelectedItem.ToString();SwitchPage(1);f.Close();}},true));f.Controls.Add(list);f.Controls.Add(note);f.Controls.Add(actions);if(paths.Count==0)note.Text="未找到安全范围内的明确候选目录。\r\n本工具不做模糊名称批量删除；可手动选择已确认的残留位置。";ApplyTheme(f);f.ShowDialog(this);}}
-        async Task Inspect(){if(!Idle())return;string p=pathBox.Text;cts=new CancellationTokenSource();Busy(true,true);lockList.Items.Clear();lockPath="";SetStep(1);lockSummary.Text="正在检查文件与进程…";latestStatus="正在检查占用，可随时取消";try{var report=await Task.Run(()=>Native.FindLocks(p,cts.Token));if(pathBox.Text!=p){lockSummary.Text="目标已改变，请重新检查。";return;}lockPath=Safety.Normalize(p);foreach(var o in report.Owners)lockList.Items.Add(o);if(lockList.Items.Count>0)lockList.SelectedIndex=0;lockSummary.Text="检查 "+report.Files+" 个文件，找到 "+report.Owners.Count+" 个相关进程。"+(report.Partial?" 检查不完整（上限 / 权限限制）。":"")+"\r\n"+(report.Note.Length>0?report.Note:"未列出进程不代表没有占用；驱动、文件夹句柄或权限限制可能无法识别。");SetStep(report.Owners.Count>0?1:2);latestStatus=report.Partial?"占用检查部分完成，详情见当前页面":"占用检查完成";Store.Log(latestStatus+"："+lockPath+"；相关进程 "+report.Owners.Count);}catch(OperationCanceledException){lockSummary.Text="已取消检查，请重新检查后再处理。";latestStatus="占用检查已取消";SetStep(0);}catch(Exception e){ShowError(e);lockSummary.Text="检查失败，请查看操作记录。";SetStep(0);}finally{Busy(false);cts.Dispose();cts=null;}}
+        async Task Inspect(){
+            if(!Idle())return;
+            string p=pathBox.Text;
+            cts=new CancellationTokenSource();Busy(true,true);lockList.Items.Clear();lockPath="";SetStep(1);
+            lockSize.Text="目标大小：正在读取…";
+            lockSummary.Text="正在检查文件与进程…";latestStatus="正在检查占用，可随时取消";
+            try {
+                var report=await Task.Run(()=>Native.FindLocks(p,cts.Token));
+                if(pathBox.Text!=p){lockSize.Text="目标大小：—";lockSummary.Text="目标已改变，请重新检查。";return;}
+                lockPath=Safety.Normalize(p);
+                string size=report.SizeBytes.HasValue?FileSizes.Format(report.SizeBytes.Value):"未能读取";
+                if(report.SizePartial&&report.SizeBytes.HasValue)size="至少 "+size+"（部分文件未统计）";
+                lockSize.Text="目标大小："+size;
+                foreach(var o in report.Owners)lockList.Items.Add(o);
+                if(lockList.Items.Count>0)lockList.SelectedIndex=0;
+                lockSummary.Text="检查 "+report.Files+" 个文件，找到 "+report.Owners.Count+" 个相关进程。"+(report.Partial?" 检查不完整（上限 / 权限限制）。":"")+"\r\n"+(report.Note.Length>0?report.Note:"未列出进程不代表没有占用；驱动、文件夹句柄或权限限制可能无法识别。");
+                SetStep(report.Owners.Count>0?1:2);
+                latestStatus=report.Partial?"占用检查部分完成，详情见当前页面":"占用检查完成";
+                Store.Log(latestStatus+"："+lockPath+"；相关进程 "+report.Owners.Count);
+            } catch(OperationCanceledException) {
+                lockSize.Text="目标大小：—";lockSummary.Text="已取消检查，请重新检查后再处理。";latestStatus="占用检查已取消";SetStep(0);
+            } catch(Exception e) {
+                lockSize.Text="目标大小：未能读取";ShowError(e);lockSummary.Text="检查失败，请查看操作记录。";SetStep(0);
+            } finally {Busy(false);cts.Dispose();cts=null;}
+        }
         async Task StopOwner(bool force){if(!Idle())return;var owner=lockList.SelectedItem as LockOwner;if(owner==null)return;if(!owner.CanStop){MessageBox.Show(this,"该进程属于系统或无法核实身份。可手动退出软件，或对具体文件选择重启后删除。","不能结束此进程");return;}
             if(!Confirm(force?"强制结束进程":"请求正常退出",owner.Display+"\r\n"+owner.Path+(force?"\r\n\r\n该程序尚未保存的内容会丢失。":"\r\n\r\n程序可能会弹出保存提示。"),force))return;
             try{MessageBox.Show(this,Native.Stop(owner,force),"处理结果");await Inspect();}catch(Exception e){ShowError(e);}}
@@ -46,7 +70,7 @@ namespace CleanBox {
             Busy(true);latestStatus="正在"+title+"…";try{
                 if(mode==0){Operations.Recycle(p);MessageBox.Show(this,"已完成回收站操作。","完成");}
                 else {DeleteResult result=await Task.Run(()=>mode==1?Operations.Permanent(p):Operations.Reboot(p));MessageBox.Show(this,result.Summary+(mode==2?"\r\n成功项已登记在 Windows 中，待重启处理；实际删除结果需重启后确认。":"")+(result.Failed.Count>0?"\r\n\r\n"+string.Join("\r\n",result.Failed.Take(6))+"\r\n完整结果见操作记录。":""),"处理结果",MessageBoxButtons.OK,result.Failed.Count>0?MessageBoxIcon.Warning:MessageBoxIcon.Information);}
-                latestStatus=title+"处理结束，详情见操作记录";lockList.Items.Clear();lockPath="";SetStep(2);lockSummary.Text="操作结束；如需再次处理，请先重新检查占用。";
+                latestStatus=title+"处理结束，详情见操作记录";lockList.Items.Clear();lockPath="";SetStep(2);lockSize.Text="目标大小：—";lockSummary.Text="操作结束；如需再次处理，请先重新检查占用。";
             }catch(Exception e){ShowError(e);}finally{Busy(false);}}
         bool Confirm(string title,string body,bool typeWord){using(var f=BuildConfirmation(title,body,typeWord))return f.ShowDialog(this)==DialogResult.OK;}
         Form BuildConfirmation(string title,string body,bool typeWord){

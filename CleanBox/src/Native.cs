@@ -14,7 +14,7 @@ namespace CleanBox {
         public int Pid; public long Started; public string Name="", Path="", Kind=""; public bool CanStop;
         public string Display { get { return Name+"  · PID "+Pid+"  · "+Kind+(CanStop?"":" · 受保护/无法核实"); } }
     }
-    public class LockReport { public List<LockOwner> Owners=new List<LockOwner>();public int Files;public bool Partial;public string Note=""; }
+    public class LockReport { public List<LockOwner> Owners=new List<LockOwner>();public int Files;public bool Partial;public string Note="";public long? SizeBytes;public bool SizePartial; }
     public static class Native {
         [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] public static extern bool MoveFileEx(string existing,string replacement,int flags);
         [DllImport("kernel32.dll",SetLastError=true)] static extern bool IsProcessCritical(IntPtr process,out bool critical);
@@ -44,7 +44,19 @@ namespace CleanBox {
                 try {if(Safety.HasReparseAncestor(d)){report.Partial=true;continue;}foreach(string f in Directory.EnumerateFiles(d)){files.Add(f);if(files.Count>=10000)break;}if(files.Count>=10000){report.Partial=true;break;}foreach(var sub in Directory.GetDirectories(d))stack.Push(sub);}
                 catch {report.Partial=true;}
             }}
-            report.Files=files.Count;var owners=new Dictionary<int,LockOwner>();uint session;int rc=RmStartSession(out session,0,new StringBuilder(33));
+            report.Files=files.Count;
+            report.SizePartial=report.Partial;
+            long bytes=0;
+            int measured=0;
+            foreach(string file in files) {
+                token.ThrowIfCancellationRequested();
+                long? length=FileSizes.ReadLength(file);
+                if(!length.HasValue||length.Value>long.MaxValue-bytes) {report.SizePartial=true;continue;}
+                bytes+=length.Value;
+                measured++;
+            }
+            if(measured>0||!report.SizePartial) report.SizeBytes=bytes;
+            var owners=new Dictionary<int,LockOwner>();uint session;int rc=RmStartSession(out session,0,new StringBuilder(33));
             if(rc!=0)throw new Win32Exception(rc,"无法开启文件占用检查");
             try {
                 for(int offset=0;offset<files.Count;offset+=256) {token.ThrowIfCancellationRequested();string[] batch=files.Skip(offset).Take(256).ToArray();rc=RmRegisterResources(session,(uint)batch.Length,batch,0,IntPtr.Zero,0,null);if(rc!=0){report.Partial=true;report.Note="部分文件未能登记："+new Win32Exception(rc).Message;}}

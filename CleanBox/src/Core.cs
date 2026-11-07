@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -11,10 +12,57 @@ using System.Web.Script.Serialization;
 using Microsoft.Win32;
 
 namespace CleanBox {
+    public enum AppSizeKind { Executable, RegisteredEstimate, InstallDirectory, EngineLauncher }
     public class AppEntry {
         public string Name = "", Version = "", Publisher = "", Source = "", Path = "", Executable = "", Command = "", Package = "", RegistryPath = "";
+        public long? SizeBytes;
+        public AppSizeKind SizeKind;
+        public bool SizePartial;
+        public string SizeSource {
+            get {
+                if(!SizeBytes.HasValue)return "";
+                switch(SizeKind) {
+                    case AppSizeKind.RegisteredEstimate: return "安装记录估算";
+                    case AppSizeKind.InstallDirectory: return SizePartial ? "安装目录（部分）" : "安装目录";
+                    case AppSizeKind.EngineLauncher: return SizePartial ? "引擎启动文件（部分）" : "仅引擎启动文件";
+                    default: return "仅程序文件";
+                }
+            }
+        }
         public RegistryHive Hive; public RegistryView View; public bool Protected;
         public string Id { get { return Package.Length > 0 ? "appx:" + Package : RegistryPath.Length > 0 ? Hive + ":" + View + ":" + RegistryPath : "exe:" + Executable.ToLowerInvariant(); } }
+    }
+    internal static class FileSizes {
+        static readonly string[] units = { "B", "KB", "MB", "GB", "TB", "PB", "EB" };
+
+        internal static string Format(long bytes) {
+            double value = bytes;
+            int unit = 0;
+            while (value >= 1024 && unit < units.Length - 1) { value /= 1024; unit++; }
+            return value.ToString("0.##") + " " + units[unit];
+        }
+
+        internal static long? FromEstimatedKilobytes(object value) {
+            if (value is int) {
+                // RegistryKey exposes REG_DWORD as a signed int.
+                uint kilobytes = unchecked((uint)(int)value);
+                return kilobytes == 0 ? (long?)null : kilobytes * 1024L;
+            }
+            long number;
+            if (long.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.None,
+                CultureInfo.InvariantCulture, out number) && number > 0 && number <= long.MaxValue / 1024)
+                return number * 1024;
+            return null;
+        }
+
+        internal static long? ReadLength(string path) {
+            try {
+                var file = new FileInfo(path);
+                if ((file.Attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) == 0) return file.Length;
+            } catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+            return null;
+        }
     }
     public static class Store {
         public static readonly string Home = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
@@ -39,14 +87,15 @@ namespace CleanBox {
         public static string QuotePS(string s) { return "'"+s.Replace("'","''")+"'"; }
         public static void Export(IEnumerable<AppEntry> apps,string file) {
             Func<string,string> q=s=>{s=s??"";if(s.Length>0&&"=+-@\t\r\n".IndexOf(s[0])>=0)s="'"+s;return "\""+s.Replace("\"","\"\"")+"\"";};
-            var lines=new List<string>{"名称,版本,发布者,来源,安装位置,程序路径"};
-            foreach(var a in apps) lines.Add(string.Join(",",new[]{a.Name,a.Version,a.Publisher,a.Source,a.Path,a.Executable}.Select(q)));
+            var lines=new List<string>{"名称,版本,发布者,来源,安装位置,程序路径,大小（字节）,大小依据"};
+            foreach(var a in apps) lines.Add(string.Join(",",new[]{a.Name,a.Version,a.Publisher,a.Source,a.Path,a.Executable,a.SizeBytes.HasValue?a.SizeBytes.Value.ToString(CultureInfo.InvariantCulture):"",a.SizeSource}.Select(q)));
             File.WriteAllLines(file,lines, new UTF8Encoding(true));
         }
     }
     public static class Scanner {
         const string Uninstall = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
         public static void Registered(Action<AppEntry> add, Action<string> status, CancellationToken token) {
+            var sizes=new InstalledSizeLookup();
             foreach(var hive in new[]{RegistryHive.LocalMachine,RegistryHive.CurrentUser}) foreach(var view in new[]{RegistryView.Registry64,RegistryView.Registry32}) {
                 token.ThrowIfCancellationRequested(); status("读取 " + hive + " · " + view);
                 try { using(var b=RegistryKey.OpenBaseKey(hive,view)) using(var root=b.OpenSubKey(Uninstall)) {
@@ -54,12 +103,21 @@ namespace CleanBox {
                     foreach(var key in root.GetSubKeyNames()) { token.ThrowIfCancellationRequested(); try { using(var k=root.OpenSubKey(key)) {
                         if(k==null) continue; string name=V(k,"DisplayName"); if(string.IsNullOrWhiteSpace(name)) continue;
                         var a=new AppEntry{Name=name,Version=V(k,"DisplayVersion"),Publisher=V(k,"Publisher"),Source=(hive==RegistryHive.LocalMachine?"已安装 · 全机":"已安装 · 当前用户")+(view==RegistryView.Registry64?" · 64位":" · 32位"),Command=V(k,"UninstallString"),Hive=hive,View=view,RegistryPath=Uninstall+"\\"+key,Protected=V(k,"SystemComponent")=="1"};
-                        a.Path=CleanPath(V(k,"InstallLocation")); a.Executable=IconPath(V(k,"DisplayIcon"));
+                        a.SizeBytes=FileSizes.FromEstimatedKilobytes(k.GetValue("EstimatedSize"));
+                        a.SizeKind=AppSizeKind.RegisteredEstimate;
+                        string installLocation=V(k,"InstallLocation");
+                        a.Path=CleanPath(installLocation); a.Executable=IconPath(V(k,"DisplayIcon"));
                         if(a.Path.Length==0 && File.Exists(a.Executable)) a.Path=System.IO.Path.GetDirectoryName(a.Executable);
                         if(a.Path.Length==0) { string exe,args; if(ParseCommand(a.Command,out exe,out args) && System.IO.Path.IsPathRooted(exe) && File.Exists(exe)) a.Path=System.IO.Path.GetDirectoryName(exe); }
+                        if(!a.SizeBytes.HasValue&&!a.Protected) {
+                            try { sizes.Fill(a,installLocation,token); }
+                            catch(IOException) { }
+                            catch(UnauthorizedAccessException) { }
+                            catch(System.Security.SecurityException) { }
+                        }
                         add(a);
-                    }} catch(Exception e) { Store.Log("跳过安装记录 " + key + "："+e.Message); } }
-                }} catch(Exception e) { Store.Log("注册表读取失败："+e.Message); }
+                    }} catch(OperationCanceledException) { throw; } catch(Exception e) { Store.Log("跳过安装记录 " + key + "："+e.Message); } }
+                }} catch(OperationCanceledException) { throw; } catch(Exception e) { Store.Log("注册表读取失败："+e.Message); }
             }
         }
         static string V(RegistryKey k,string name) { return Convert.ToString(k.GetValue(name,"")); }
@@ -93,6 +151,7 @@ namespace CleanBox {
         }
         public static AppEntry FromExe(string p,string source,string title=null) {
             var a=new AppEntry{Executable=p,Path=System.IO.Path.GetDirectoryName(p),Source=source,Name=title??System.IO.Path.GetFileNameWithoutExtension(p)};
+            a.SizeBytes=FileSizes.ReadLength(p);
             try { var v=FileVersionInfo.GetVersionInfo(p); if(title==null&&!string.IsNullOrWhiteSpace(v.ProductName)) a.Name=v.ProductName.Trim(); a.Version=v.ProductVersion??"";a.Publisher=v.CompanyName??""; } catch {}
             return a;
         }
@@ -137,12 +196,15 @@ namespace CleanBox {
             if(roots.Any(r=>Within(p,r))) return true;
             return Regex.IsMatch(p,@"^[A-Za-z]:\\(\$RECYCLE\.BIN|System Volume Information|Recovery|Boot|Config\.Msi)(\\|$)",RegexOptions.IgnoreCase);
         }
+        internal static bool IsSharedDirectory(string p) {
+            string user=Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var shared=new[]{Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),user,Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),System.IO.Path.Combine(user,"Downloads"),System.IO.Path.Combine(user,"AppData"),System.IO.Path.GetDirectoryName(user)};
+            return shared.Where(s=>!string.IsNullOrEmpty(s)).Any(s=>Within(s,p))||new[]{"Program Files","Program Files (x86)","ProgramData","Users","Windows Kits","WindowsApps","Programs","Common Files"}.Contains(System.IO.Path.GetFileName(p),StringComparer.OrdinalIgnoreCase);
+        }
         public static string Check(string input,bool allowTest=false) {
             string p=Normalize(input); if(p.Length<4||System.IO.Path.GetDirectoryName(p)==null) throw new IOException("禁止删除磁盘根目录。");
             if(IsSystemTree(p)||Regex.IsMatch(p,@"^[A-Za-z]:\\(pagefile\.sys|swapfile\.sys|hiberfil\.sys|bootmgr|BOOTNXT|DumpStack\.log(\.tmp)?)$",RegexOptions.IgnoreCase)) throw new IOException("这是受保护的系统位置。商店应用请使用正常卸载。");
-            string user=Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var shared=new[]{Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),user,Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),System.IO.Path.Combine(user,"Downloads"),System.IO.Path.Combine(user,"AppData"),System.IO.Path.GetDirectoryName(user)};
-            if(shared.Where(s=>!string.IsNullOrEmpty(s)).Any(s=>Within(s,p))||new[]{"Program Files","Program Files (x86)","ProgramData","Users","Windows Kits","WindowsApps","Programs","Common Files"}.Contains(System.IO.Path.GetFileName(p),StringComparer.OrdinalIgnoreCase)) throw new IOException("这是共享目录或用户资料根目录，请选择更具体的软件文件夹。");
+            if(IsSharedDirectory(p)) throw new IOException("这是共享目录或用户资料根目录，请选择更具体的软件文件夹。");
             if((Within(Store.Home,p)||Within(p,Store.Home))&&!(allowTest&&Within(p,System.IO.Path.Combine(Store.Home,"tests")))) throw new IOException("不能删除清理匣自身及其父目录。");
             if(HasReparseAncestor(p)) throw new IOException("目标或父目录是链接/联接点。请定位真实目录后再处理。");
             if(!Directory.Exists(p)&&!File.Exists(p)) throw new FileNotFoundException("目标已经不存在。",p);

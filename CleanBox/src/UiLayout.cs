@@ -16,7 +16,7 @@ namespace CleanBox {
             var sidebarFrame=new CanvasPanel{Dock=DockStyle.Left,Width=204,Padding=new Padding(12,16,4,16)};
             sidebar=new SurfacePanel{Dock=DockStyle.Fill,Padding=new Padding(13,24,13,16),Tag="sidebar"};sidebarFrame.Controls.Add(sidebar);
             var brand=new Label{Text="清理匣",Dock=DockStyle.Top,Height=43,Font=new Font(Font.FontFamily,22,FontStyle.Bold),Tag="accent",TextAlign=ContentAlignment.MiddleLeft};
-            var brandSub=TextLabel("CleanBox  2.2.2",34,"muted");var nav=new CanvasFlowPanel{Dock=DockStyle.Top,Height=160,FlowDirection=FlowDirection.TopDown,WrapContents=false};
+            var brandSub=TextLabel("CleanBox  2.2.4",34,"muted");var nav=new CanvasFlowPanel{Dock=DockStyle.Top,Height=160,FlowDirection=FlowDirection.TopDown,WrapContents=false};
             navigation=new UiButton[3];string[] names={"软件管理","文件解锁","操作记录"},glyphs={"\uE8A5","\uE785","\uE81C"};
             for(int i=0;i<3;i++){int target=i;var b=new UiButton{Text=names[i],Glyph=glyphs[i],Kind="nav",AutoSize=false,Width=162,Height=45,Margin=new Padding(0,0,0,6)};b.Click+=(s,e)=>SwitchPage(target);navigation[i]=b;nav.Controls.Add(b);}
             nav.Resize+=(s,e)=>{foreach(var b in navigation)b.Width=nav.ClientSize.Width;};
@@ -47,7 +47,24 @@ namespace CleanBox {
             var searchHint=TextLabel("搜索名称、发布者或路径  ·  Ctrl + F",25,"muted");
             var counts=new CanvasFlowPanel{Dock=DockStyle.Top,Height=35,WrapContents=false};totalLabel=new Label{AutoSize=true,Margin=new Padding(0,4,15,0),Tag="muted"};installedLabel=new Label{AutoSize=true,Margin=new Padding(0,4,15,0),Tag="muted"};foundLabel=new Label{AutoSize=true,Margin=new Padding(0,4,0,0),Tag="accent"};counts.Controls.AddRange(new Control[]{totalLabel,installedLabel,foundLabel});
             grid=new SmoothGrid{Dock=DockStyle.Fill,ReadOnly=true,AllowUserToAddRows=false,AllowUserToDeleteRows=false,AllowUserToResizeRows=false,RowHeadersVisible=false,SelectionMode=DataGridViewSelectionMode.FullRowSelect,MultiSelect=false,BorderStyle=BorderStyle.None,AutoSizeColumnsMode=DataGridViewAutoSizeColumnsMode.Fill,EnableHeadersVisualStyles=false,ColumnHeadersBorderStyle=DataGridViewHeaderBorderStyle.None,CellBorderStyle=DataGridViewCellBorderStyle.SingleHorizontal};
-            AddColumn("软件 / 发布者",62,180);AddColumn("版本",18,70);AddColumn("来源",20,95);grid.SelectionChanged+=(s,e)=>ShowSelection();grid.CellDoubleClick+=(s,e)=>{if(e.RowIndex>=0)OpenSelected();};grid.CellPainting+=PaintAppCell;grid.Sorted+=(s,e)=>ShowSelection();
+            AddColumn("软件 / 发布者",53,180);AddColumn("版本",15,70);AddColumn("来源",17,95);
+            AddColumn("大小",15,108);
+            sizeColumn=grid.Columns[grid.Columns.Count-1];
+            sizeColumn.ValueType=typeof(long);
+            sizeColumn.ToolTipText="≈ 安装记录估算；≥ 只统计了部分文件；启动 仅引擎启动文件；— 未提供。详情可查看大小依据。";
+            grid.CellFormatting+=(s,e)=>{
+                if(e.ColumnIndex!=sizeColumn.Index||e.RowIndex<0)return;
+                var a=grid.Rows[e.RowIndex].Tag as AppEntry;
+                string prefix="";
+                if(a!=null){
+                    if(a.SizeKind==AppSizeKind.RegisteredEstimate)prefix="≈ ";
+                    else if(a.SizeKind==AppSizeKind.EngineLauncher)prefix="启动 ";
+                    if(a.SizePartial)prefix+="≥ ";
+                }
+                e.Value=e.Value is long?prefix+FileSizes.Format((long)e.Value):"—";
+                e.FormattingApplied=true;
+            };
+            grid.SelectionChanged+=(s,e)=>ShowSelection();grid.CellDoubleClick+=(s,e)=>{if(e.RowIndex>=0)OpenSelected();};grid.CellPainting+=PaintAppCell;grid.Sorted+=(s,e)=>ShowSelection();
             var gridHost=new SurfacePanel{Dock=DockStyle.Fill,Padding=new Padding(10,13,10,13)};emptyList=new Label{Text="正在读取软件清单…",Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter,Tag="muted",Visible=false};gridHost.Controls.Add(grid);gridHost.Controls.Add(emptyList);
             listCount=TextLabel("准备扫描",27,"muted");listCount.Dock=DockStyle.Bottom;
             listing.Controls.Add(gridHost);listing.Controls.Add(listCount);listing.Controls.Add(counts);listing.Controls.Add(summary);listing.Controls.Add(advanced);listing.Controls.Add(filters);listing.Controls.Add(searchHint);
@@ -69,14 +86,15 @@ namespace CleanBox {
             var p=Page();var heading=Heading("文件解锁","找到占用它的程序，再处理文件");heading.Height=68;var stepBar=new CanvasTablePanel{Dock=DockStyle.Top,Height=38,ColumnCount=3};steps=new Label[3];string[] captions={"1   选择文件","2   检查并解除占用","3   确认删除"};for(int i=0;i<3;i++){stepBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,33.33f));steps[i]=new Label{Text=captions[i],Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,Tag="muted"};stepBar.Controls.Add(steps[i],i,0);}
             dropZone=new SurfacePanel{Dock=DockStyle.Top,Height=105,Padding=new Padding(12),AllowDrop=true};dropText=TextLabel("拖入删不掉的文件或文件夹",34,"accent");dropText.Font=new Font(Font.FontFamily,11,FontStyle.Bold);dropText.AllowDrop=true;
             var pathRow=new CanvasTablePanel{Dock=DockStyle.Top,Height=41,ColumnCount=3,RowCount=1};pathRow.RowStyles.Add(new RowStyle(SizeType.Percent,100));pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,106));pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,118));
-            pathBox=new TextBox{Dock=DockStyle.Fill,Margin=new Padding(0,8,12,0),AllowDrop=true,AccessibleName="需要处理的完整文件或文件夹路径"};pathBox.TextChanged+=(s,e)=>{if(lockList==null)return;lockList.Items.Clear();lockPath="";lockSummary.Text="目标已改变，请先检查占用。";SetStep(0);UpdateFileActions();};
+            pathBox=new TextBox{Dock=DockStyle.Fill,Margin=new Padding(0,8,12,0),AllowDrop=true,AccessibleName="需要处理的完整文件或文件夹路径"};pathBox.TextChanged+=(s,e)=>{if(lockList==null)return;lockList.Items.Clear();lockPath="";lockSize.Text="目标大小：—";lockSummary.Text="目标已改变，请先检查占用。";SetStep(0);UpdateFileActions();};
             pathRow.Controls.Add(Input(pathBox,new Padding(0,2,10,4)),0,0);pathRow.Controls.Add(Button("选择文件",()=>ChooseTarget(false)),1,0);pathRow.Controls.Add(Button("选择文件夹",()=>ChooseTarget(true)),2,0);
             dropZone.Controls.Add(pathRow);dropZone.Controls.Add(dropText);foreach(var target in new Control[]{p,dropZone,dropText,pathBox,pathBox.Parent}){target.AllowDrop=true;target.DragEnter+=TargetDragEnter;target.DragDrop+=TargetDrop;}
             var inspectBar=Bar(48);inspectButton=Button("检查占用",async()=>await Inspect(),true);inspectBar.Controls.Add(inspectButton);inspectBar.Controls.Add(Button("打开目标位置",()=>OpenPath(pathBox.Text)));
             var result=new SurfacePanel{Dock=DockStyle.Fill,Padding=new Padding(16,10,16,12)};lockSummary=TextLabel("尚未检查。选择目标后，点击“检查占用”。",54,"muted");
+            lockSize=TextLabel("目标大小：—",24,"accent");
             lockList=new ListBox{Dock=DockStyle.Fill,BorderStyle=BorderStyle.None,HorizontalScrollbar=true,IntegralHeight=false,DisplayMember="Display",DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=54};lockList.DrawItem+=PaintLockOwner;lockList.SelectedIndexChanged+=(s,e)=>UpdateFileActions();
             var ownerBar=Bar(46);ownerBar.Dock=DockStyle.Bottom;stopButton=Button("正常退出选中程序",async()=>await StopOwner(false));ownerBar.Controls.Add(stopButton);
-            result.Controls.Add(lockList);result.Controls.Add(ownerBar);result.Controls.Add(lockSummary);
+            result.Controls.Add(lockList);result.Controls.Add(ownerBar);result.Controls.Add(lockSummary);result.Controls.Add(lockSize);
             var bottom=new CanvasPanel{Dock=DockStyle.Bottom,Height=93,Padding=new Padding(0,8,0,0)};var deleteBar=Bar();recycleButton=Button("移到回收站",async()=>await DeleteTarget(0),true);fileMore=Button("高级处理  ▾",()=>{UpdateFileActions();fileMenu.Show(fileMore,new Point(0,fileMore.Height));});deleteBar.Controls.AddRange(new Control[]{recycleButton,fileMore});
             fileMenu=new ContextMenuStrip();fileMenu.Items.Add("强制结束选中程序…",null,async(s,e)=>await StopOwner(true));fileMenu.Items.Add(new ToolStripSeparator());fileMenu.Items.Add("永久删除…",null,async(s,e)=>await DeleteTarget(1));fileMenu.Items.Add("重启后删除…",null,async(s,e)=>await DeleteTarget(2));
             stepLabel=TextLabel("优先正常退出程序，再移到回收站。检测可能受权限、驱动和文件夹句柄限制。",43,"muted");stepLabel.Dock=DockStyle.Fill;bottom.Controls.Add(stepLabel);bottom.Controls.Add(deleteBar);

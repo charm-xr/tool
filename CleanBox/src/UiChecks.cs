@@ -22,10 +22,12 @@ namespace CleanBox {
                 filter.SelectedIndex=3;check(grid.Rows.Cast<DataGridViewRow>().Where(r=>r.Visible).All(r=>IsCandidate((AppEntry)r.Tag)),"Candidate filter includes only unregistered discoveries");filter.SelectedIndex=0;
                 search.Text=apps[0].Name;check(grid.Rows.Cast<DataGridViewRow>().Any(r=>r.Visible),"Name search finds an installed entry");check(Selected()!=null&&detailTitle.Text==Selected().Name,"Details follow the selected entry");search.Clear();
                 var protectedApp=new AppEntry{Name="UI protected fixture",RegistryPath="UI-fixture-protected",Protected=true,Source="已安装",Command="fake.exe"};
-                var candidate=new AppEntry{Name="UI candidate fixture",Executable=Path.Combine(Store.Home,"tests","ui-candidate.exe"),Path=Path.Combine(Store.Home,"tests"),Source="磁盘发现"};
+                var candidate=new AppEntry{Name="UI candidate fixture",Executable=Path.Combine(Store.Home,"tests","ui-candidate.exe"),Path=Path.Combine(Store.Home,"tests"),Source="磁盘发现",SizeBytes=2097152};
                 foreach(var a in new[]{protectedApp,candidate})Add(a);
                 search.Text=protectedApp.Name;check(!uninstallButton.Enabled&&!residualButton.Enabled&&!appMenu.Items[0].Enabled&&!appMenu.Items[1].Enabled,"System components keep destructive entry points disabled");
                 search.Text=candidate.Name;check(uninstallButton.Text=="核对并处理目录"&&uninstallButton.Enabled&&!appMenu.Items[1].Enabled,"Candidate uses directory verification instead of a fake uninstall action");
+                var sizeCell=grid.SelectedRows[0].Cells[sizeColumn.Index];
+                check(sizeCell.Value is long && (string)sizeCell.FormattedValue=="2 MB" && detail.Text.Contains("2 MB（仅程序文件）"),"Software size is numeric for sorting and names the measured scope");
                 uninstallButton.PerformClick();check(currentPage==1&&pathBox.Text==candidate.Path,"Candidate action opens the correct target in file tools");
                 search.Clear();foreach(var a in new[]{protectedApp,candidate}){var row=grid.Rows.Cast<DataGridViewRow>().First(r=>r.Tag==a);grid.Rows.Remove(row);apps.Remove(a);ids.Remove(a.Id);}ApplyFilter();grid.ClearSelection();grid.Rows[0].Selected=true;grid.CurrentCell=grid.Rows[0].Cells[0];grid.FirstDisplayedScrollingRowIndex=0;ShowSelection();
                 pathBox.Clear();check(!inspectButton.Enabled&&!recycleButton.Enabled&&!stopButton.Enabled,"Empty target disables file actions");
@@ -36,7 +38,7 @@ namespace CleanBox {
                 string fixture=Path.Combine(Store.Home,"tests","ui-lock-"+Guid.NewGuid().ToString("N")+".txt");Directory.CreateDirectory(Path.GetDirectoryName(fixture));File.WriteAllText(fixture,"CleanBox UI lock fixture");
                 check(Safety.Within(fixture,Path.Combine(Store.Home,"tests")),"UI lock fixture stays inside the test directory");
                 using(var helper=Process.Start(new ProcessStartInfo(Application.ExecutablePath,"--hold-test \""+fixture+"\""){UseShellExecute=false,CreateNoWindow=true})){
-                    try{for(int retry=0;retry<100&&!File.Exists(fixture+".ready");retry++)await Task.Delay(50);check(File.Exists(fixture+".ready"),"Independent UI lock fixture started");pathBox.Text=fixture;await Inspect();check(lockList.Items.Cast<LockOwner>().Any(o=>o.Pid==helper.Id)&&lockPath==fixture,"File page shows the actual locking process");}
+                    try{for(int retry=0;retry<100&&!File.Exists(fixture+".ready");retry++)await Task.Delay(50);check(File.Exists(fixture+".ready"),"Independent UI lock fixture started");pathBox.Text=fixture;await Inspect();check(lockList.Items.Cast<LockOwner>().Any(o=>o.Pid==helper.Id)&&lockPath==fixture,"File page shows the actual locking process");check(lockSize.Text.Contains(FileSizes.Format(new FileInfo(fixture).Length)),"File page shows the inspected target size");}
                     finally{if(!helper.HasExited){helper.Kill();helper.WaitForExit();}if(Safety.Within(fixture,Path.Combine(Store.Home,"tests"))){File.Delete(fixture);File.Delete(fixture+".ready");}}
                 }
                 pathBox.Clear();
@@ -63,6 +65,8 @@ namespace CleanBox {
                 check(search.Parent.Bottom<=search.Parent.Parent.ClientSize.Height&&search.Top>=0&&search.Bottom<=search.Parent.ClientSize.Height&&filter.Bottom<=filter.Parent.ClientSize.Height,"Search field and source filter fit the visible row at screen DPI");
                 ClientSize=new Size(Px(1024),Px(662));PerformLayout();ArrangeCatalog();capture("v220-software-compact");
                 check(grid.Width>=Px(300)&&detail.Width>Px(180)&&detailTitle.Right<=detailTitle.Parent.ClientSize.Width,"Narrow window preserves usable list and complete detail layout");
+                int sizeTextWidth=TextRenderer.MeasureText("≈ 1023.99 MB",grid.Font).Width+grid.DefaultCellStyle.Padding.Horizontal;
+                check(grid.GetColumnDisplayRectangle(sizeColumn.Index,true).Width==sizeColumn.Width&&sizeColumn.Width>=sizeTextWidth,"Narrow window keeps the size value and unit visible");
                 SwitchPage(1);pathBox.Text="";MotionClock.FinishAll();capture("v220-file-tools");check(pathBox.Right<=pathBox.Parent.ClientSize.Width&&lockList.Height>=Px(80),"Narrow file page keeps target and results visible");
                 check(pathBox.Parent.Bottom<=pathBox.Parent.Parent.ClientSize.Height&&pathBox.Top>=0&&pathBox.Bottom<=pathBox.Parent.ClientSize.Height,"Path entry fits inside its visible rounded surface");
                 foreach(var b in selectionActions)check(b.Top>=0&&b.Bottom<=b.Parent.ClientSize.Height&&b.Right<=b.Parent.ClientSize.Width,"Detail action fits its container: "+b.Text);

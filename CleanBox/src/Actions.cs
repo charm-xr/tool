@@ -12,9 +12,9 @@ using System.Windows.Forms;
 namespace CleanBox {
     public partial class MainForm {
         bool Idle(){if(!working)return true;MessageBox.Show(this,"请先等待当前操作完成，或取消扫描。","正在处理");return false;}
-        void Busy(bool value,bool cancellable=false){working=value;quick.Enabled=disk.Enabled=folder.Enabled=!value;cancel.Enabled=value&&cancellable;cancel.Visible=value&&cancellable;progress.Visible=value;adminButton.Enabled=!value&&!Native.IsAdmin;UpdateFileActions();ShowSelection();UpdateCounts();}
+        void Busy(bool value,bool cancellable=false){working=value;quick.Enabled=disk.Enabled=folder.Enabled=!value;cancel.Enabled=value&&cancellable;cancel.Visible=value&&cancellable;progress.Visible=value;adminButton.Enabled=!value&&!Native.IsAdmin;UpdateFileActions();UpdateUsageActions();ShowSelection();UpdateCounts();}
         async Task RunScan(Action<CancellationToken> action,string finished){if(!Idle())return;cts=new CancellationTokenSource();Busy(true,true);try{await Task.Run(()=>action(cts.Token));DrainAll();latestStatus=finished+" · "+apps.Count+" 条";Store.Log(latestStatus);}catch(OperationCanceledException){DrainAll();latestStatus="已停止，保留已发现的 "+apps.Count+" 条结果。";}catch(Exception e){ShowError(e);}finally{Busy(false);cts.Dispose();cts=null;}}
-        async Task QuickScan(){if(!Idle())return;apps.Clear();ids.Clear();grid.Rows.Clear();
+        async Task QuickScan(){if(!Idle())return;apps.Clear();ids.Clear();RebuildCatalogIndex();grid.Rows.Clear();
             ShowSelection();await RunScan(token=>{Scanner.Registered(queue.Enqueue,s=>latestStatus=s,token);try{Scanner.Packages(queue.Enqueue,s=>latestStatus=s,token);}catch(OperationCanceledException){throw;}catch(Exception e){Store.Log("商店应用未能完整读取："+e.Message);}
                 Scanner.Shortcuts(queue.Enqueue,s=>latestStatus=s,token);},"基础扫描完成；可用“全盘发现”补充绿色软件。详情见操作记录");}
         async Task ChooseFolder(){if(!Idle())return;using(var f=new FolderBrowserDialog{Description="选择软件存放目录，将递归发现 EXE 程序（只读扫描）",SelectedPath=Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),ShowNewFolderButton=false})if(f.ShowDialog(this)==DialogResult.OK){string root=f.SelectedPath;await RunScan(t=>Scanner.Disk(root,queue.Enqueue,s=>latestStatus=s,t),"目录扫描完成");}}
@@ -27,14 +27,11 @@ namespace CleanBox {
         void UseSelectedFolder(){var a=Selected();if(a==null)return;if(a.Path.Length==0){MessageBox.Show(this,"该条目没有提供安装目录，请手动选择目标。","清理匣");return;}pathBox.Text=a.Path;SwitchPage(1);}
         async Task UninstallSelected(){if(!Idle())return;var a=Selected();if(a==null)return;if(a.Protected){MessageBox.Show(this,"此项是系统组件，本工具不执行卸载。","受保护项目");return;}
             if(!Confirm("正常卸载",a.Name+"\r\n\r\n"+(a.Package.Length>0?"仅卸载当前用户的软件包：\r\n"+a.Package:"即将启动软件登记的卸载程序：\r\n"+a.Command),false))return;
-            Busy(true);try{await Task.Run(()=>Operations.Uninstall(a));MessageBox.Show(this,a.Package.Length>0?"软件包已卸载，重新扫描可更新清单。":"已启动原卸载程序，请在它的窗口完成操作。完成后可检查残留、重新扫描。","卸载");}catch(Exception e){ShowError(e);}finally{Busy(false);}}
+            Busy(true);bool launched=false;try{await Task.Run(()=>Operations.Uninstall(a));launched=true;RememberUninstall(a);latestStatus="卸载已启动，完成后请核对结果与残留。";}catch(Exception e){ShowError(e);}finally{Busy(false);}if(launched)ShowResidualReview(a,true);}
         async Task ClearRecord(){if(!Idle())return;var a=Selected();if(a==null)return;if(!Confirm("清除失效记录",a.Name+"\r\n"+a.Hive+"\\"+a.RegistryPath+"\r\n\r\n仅清理不存在的软件留下的卸载列表项，先导出备份；不扫描删除其他注册表键。",true))return;
             Busy(true);try{await Task.Run(()=>Operations.RemoveStaleRecord(a));MessageBox.Show(this,"失效记录已删除，备份保存在 data 目录。重新扫描可刷新列表。","完成");}catch(Exception e){ShowError(e);}finally{Busy(false);}}
-        void Export(){using(var f=new SaveFileDialog{Title="导出当前筛选结果",Filter="CSV 表格|*.csv",FileName="软件清单-"+DateTime.Now.ToString("yyyyMMdd")+".csv",InitialDirectory=Store.Home})if(f.ShowDialog(this)==DialogResult.OK)try{Store.Export(apps.Where(Matches),f.FileName);latestStatus="清单已导出："+f.FileName;}catch(Exception e){ShowError(e);}}
-        void ResidualDialog(){if(!Idle())return;var a=Selected();if(a==null)return;var paths=Operations.Residuals(a);using(var f=new Form{Text="残留候选 · "+a.Name,ClientSize=new Size(760,440),StartPosition=FormStartPosition.CenterParent,Font=Font,MinimumSize=new Size(660,380)}){
-            var list=new ListBox{Dock=DockStyle.Fill,HorizontalScrollbar=true};list.Items.AddRange(paths.Cast<object>().ToArray());
-            var note=new Label{Dock=DockStyle.Top,Height=103,Padding=new Padding(15),Text="下列是安装位置和名称完全匹配的配置目录，不代表一定是残留。\r\n请先正常卸载；配置目录可能包含账号、设置和个人数据。\r\n逐个选择后进入文件处理页，核对完整路径再删除。不会自动勾选或删除。"};
-            var actions=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=52,Padding=new Padding(10)};actions.Controls.Add(Button("打开选中位置",()=>{if(list.SelectedItem!=null)OpenPath(list.SelectedItem.ToString());}));actions.Controls.Add(Button("处理选中目录",()=>{if(list.SelectedItem!=null){pathBox.Text=list.SelectedItem.ToString();SwitchPage(1);f.Close();}},true));f.Controls.Add(list);f.Controls.Add(note);f.Controls.Add(actions);if(paths.Count==0)note.Text="未找到安全范围内的明确候选目录。\r\n本工具不做模糊名称批量删除；可手动选择已确认的残留位置。";ApplyTheme(f);f.ShowDialog(this);}}
+        void Export(){ApplyFilter();using(var f=new SaveFileDialog{Title="导出当前筛选结果",Filter="CSV 表格|*.csv",FileName="软件清单-"+DateTime.Now.ToString("yyyyMMdd")+".csv",InitialDirectory=Store.Home})if(f.ShowDialog(this)==DialogResult.OK)try{Store.Export(grid.Rows.Cast<DataGridViewRow>().Where(r=>r.Visible).Select(r=>(AppEntry)r.Tag),f.FileName);latestStatus="清单已导出："+f.FileName;}catch(Exception e){ShowError(e);}}
+        void ResidualDialog(){if(!Idle())return;var app=Selected();if(app!=null&&!app.Protected)ShowResidualReview(app,false);}
         async Task Inspect(){
             if(!Idle())return;
             string p=pathBox.Text;
@@ -68,7 +65,7 @@ namespace CleanBox {
             string explanation=mode==0?"将目标及其全部内容交给 Windows 回收站处理。若系统提示无法回收，可取消。":mode==1?"将删除目标及其全部内容，不经过回收站；已删除的项目无法由本工具恢复。":"将在下次系统重启时永久删除目标及其当前内容，不经过回收站。本工具不会替你重启；登记后不能从本工具撤销。";
             if(!Confirm(title,p+"\r\n\r\n"+explanation+"\r\n\r\n请确认这是具体的软件或文件目录，不包含其他需要保留的数据。",mode!=0))return;
             Busy(true);latestStatus="正在"+title+"…";try{
-                if(mode==0){Operations.Recycle(p);MessageBox.Show(this,"已完成回收站操作。","完成");}
+                if(mode==0){await RecycleInBackground(p);MessageBox.Show(this,"已完成回收站操作。","完成");}
                 else {DeleteResult result=await Task.Run(()=>mode==1?Operations.Permanent(p):Operations.Reboot(p));MessageBox.Show(this,result.Summary+(mode==2?"\r\n成功项已登记在 Windows 中，待重启处理；实际删除结果需重启后确认。":"")+(result.Failed.Count>0?"\r\n\r\n"+string.Join("\r\n",result.Failed.Take(6))+"\r\n完整结果见操作记录。":""),"处理结果",MessageBoxButtons.OK,result.Failed.Count>0?MessageBoxIcon.Warning:MessageBoxIcon.Information);}
                 latestStatus=title+"处理结束，详情见操作记录";lockList.Items.Clear();lockPath="";SetStep(2);lockSize.Text="目标大小：—";lockSummary.Text="操作结束；如需再次处理，请先重新检查占用。";
             }catch(Exception e){ShowError(e);}finally{Busy(false);}}

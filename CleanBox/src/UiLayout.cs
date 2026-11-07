@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -16,20 +16,21 @@ namespace CleanBox {
             var sidebarFrame=new CanvasPanel{Dock=DockStyle.Left,Width=204,Padding=new Padding(12,16,4,16)};
             sidebar=new SurfacePanel{Dock=DockStyle.Fill,Padding=new Padding(13,24,13,16),Tag="sidebar"};sidebarFrame.Controls.Add(sidebar);
             var brand=new Label{Text="清理匣",Dock=DockStyle.Top,Height=43,Font=new Font(Font.FontFamily,22,FontStyle.Bold),Tag="accent",TextAlign=ContentAlignment.MiddleLeft};
-            var brandSub=TextLabel("CleanBox  2.2.4",34,"muted");var nav=new CanvasFlowPanel{Dock=DockStyle.Top,Height=160,FlowDirection=FlowDirection.TopDown,WrapContents=false};
+            var brandSub=TextLabel("CleanBox  2.4.1",34,"muted");var nav=new CanvasFlowPanel{Dock=DockStyle.Top,Height=215,FlowDirection=FlowDirection.TopDown,WrapContents=false};
             navigation=new UiButton[3];string[] names={"软件管理","文件解锁","操作记录"},glyphs={"\uE8A5","\uE785","\uE81C"};
             for(int i=0;i<3;i++){int target=i;var b=new UiButton{Text=names[i],Glyph=glyphs[i],Kind="nav",AutoSize=false,Width=162,Height=45,Margin=new Padding(0,0,0,6)};b.Click+=(s,e)=>SwitchPage(target);navigation[i]=b;nav.Controls.Add(b);}
-            nav.Resize+=(s,e)=>{foreach(var b in navigation)b.Width=nav.ClientSize.Width;};
+            usageNavigation=new UiButton{Text="磁盘占用分析",Glyph="\uEDA2",Kind="nav",Width=162,Height=45,Margin=new Padding(0,0,0,6)};usageNavigation.Click+=(s,e)=>SwitchPage(4);nav.Controls.Add(usageNavigation);
+            nav.Resize+=(s,e)=>{foreach(var b in navigation)b.Width=nav.ClientSize.Width;usageNavigation.Width=nav.ClientSize.Width;};
             var options=new CanvasPanel{Dock=DockStyle.Bottom,Height=96,Tag="sidebar"};
             settingsButton=new UiButton{Text="设置",Glyph="\uE713",Kind="nav",Dock=DockStyle.Top,Height=45};settingsButton.Click+=(s,e)=>SwitchPage(3);
             var permissions=TextLabel(Native.IsAdmin?"管理员权限":"普通权限 · 按需提权",37,"muted");permissions.Dock=DockStyle.Bottom;
             options.Controls.Add(permissions);options.Controls.Add(settingsButton);
             sidebar.Controls.Add(nav);sidebar.Controls.Add(brandSub);sidebar.Controls.Add(brand);sidebar.Controls.Add(options);
             var foot=new CanvasPanel{Dock=DockStyle.Bottom,Height=38,Padding=new Padding(18,8,18,7),Tag="surface"};
-            progress=new ProgressBar{Dock=DockStyle.Right,Width=100,Style=ProgressBarStyle.Marquee,Visible=false};status=new Label{Dock=DockStyle.Fill,AutoEllipsis=true,Text="准备就绪",Tag="muted"};
+            progress=new GlassProgress{Dock=DockStyle.Right,Width=112,Visible=false};status=new Label{Dock=DockStyle.Fill,AutoEllipsis=true,Text="准备就绪",Tag="muted"};
             cancel=Button("取消任务",()=>{if(cts!=null)cts.Cancel();});cancel.AutoSize=false;cancel.Dock=DockStyle.Right;cancel.Width=96;cancel.MinimumSize=Size.Empty;cancel.Height=24;cancel.Visible=false;
             foot.Controls.Add(status);foot.Controls.Add(cancel);foot.Controls.Add(progress);
-            host=new CanvasPanel{Dock=DockStyle.Fill};pages=new[]{BuildCatalog(),BuildFiles(),BuildLog(),BuildSettings()};foreach(var p in pages)host.Controls.Add(p);
+            host=new CanvasPanel{Dock=DockStyle.Fill};pages=new[]{BuildCatalog(),BuildFiles(),BuildLog(),BuildSettings(),BuildDiskUsage()};foreach(var p in pages)host.Controls.Add(p);
             Controls.Add(host);Controls.Add(sidebarFrame);Controls.Add(foot);
         }
         Panel BuildCatalog(){
@@ -40,7 +41,7 @@ namespace CleanBox {
             catalogBody=new CanvasPanel{Dock=DockStyle.Fill};catalogBody.Resize+=(s,e)=>ArrangeCatalog();
             var listing=new CanvasPanel{Dock=DockStyle.Fill,Padding=new Padding(0,0,16,0)};
             var filters=new CanvasTablePanel{Dock=DockStyle.Top,Height=43,ColumnCount=3,RowCount=1};filters.RowStyles.Add(new RowStyle(SizeType.Percent,100));filters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));filters.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,132));filters.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,96));
-            search=new TextBox{Dock=DockStyle.Fill,Margin=new Padding(0,5,12,4),AccessibleName="搜索名称、发布者或路径"};search.TextChanged+=(s,e)=>ApplyFilter();
+            search=new TextBox{Dock=DockStyle.Fill,Margin=new Padding(0,5,12,4),AccessibleName="搜索名称、发布者或路径"};search.TextChanged+=(s,e)=>ScheduleSearch();search.KeyDown+=(s,e)=>{if(e.KeyCode==Keys.Enter){ApplyFilter();e.SuppressKeyPress=true;}};
             filter=new ChoiceButton{Dock=DockStyle.Fill,Margin=new Padding(0,0,0,0)};filter.Items.AddRange(new object[]{"全部来源","已安装","应用商店","绿色候选","快捷方式","磁盘发现"});filter.SelectedIndex=0;filter.SelectedIndexChanged+=(s,e)=>ApplyFilter();filters.Controls.Add(Input(search,new Padding(0,3,12,3)),0,0);filters.Controls.Add(filter,1,0);
             advancedButton=new UiButton{Text="筛选 · 1",Dock=DockStyle.Fill,Margin=new Padding(6,0,0,0)};advancedButton.Click+=(s,e)=>ToggleFilters();filters.Controls.Add(advancedButton,2,0);
             var advanced=BuildFilters();var summary=BuildFilterSummary();
@@ -67,7 +68,7 @@ namespace CleanBox {
             grid.SelectionChanged+=(s,e)=>ShowSelection();grid.CellDoubleClick+=(s,e)=>{if(e.RowIndex>=0)OpenSelected();};grid.CellPainting+=PaintAppCell;grid.Sorted+=(s,e)=>ShowSelection();
             var gridHost=new SurfacePanel{Dock=DockStyle.Fill,Padding=new Padding(10,13,10,13)};emptyList=new Label{Text="正在读取软件清单…",Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleCenter,Tag="muted",Visible=false};gridHost.Controls.Add(grid);gridHost.Controls.Add(emptyList);
             listCount=TextLabel("准备扫描",27,"muted");listCount.Dock=DockStyle.Bottom;
-            listing.Controls.Add(gridHost);listing.Controls.Add(listCount);listing.Controls.Add(counts);listing.Controls.Add(summary);listing.Controls.Add(advanced);listing.Controls.Add(filters);listing.Controls.Add(searchHint);
+            listing.Controls.Add(gridHost);listing.Controls.Add(listCount);listing.Controls.Add(counts);listing.Controls.Add(BuildUninstallFollowup());listing.Controls.Add(summary);listing.Controls.Add(advanced);listing.Controls.Add(filters);listing.Controls.Add(searchHint);
             detailPanel=BuildDetail();detailPanel.Dock=DockStyle.Right;detailPanel.Width=292;catalogBody.Controls.Add(listing);catalogBody.Controls.Add(detailPanel);
             p.Controls.Add(catalogBody);p.Controls.Add(heading);return p;
         }
@@ -76,10 +77,11 @@ namespace CleanBox {
             var p=new SurfacePanel();var title=new CanvasPanel{Dock=DockStyle.Top,Height=90,Tag="surface"};detailIcon=new PictureBox{Location=new Point(0,2),Size=new Size(40,40),SizeMode=PictureBoxSizeMode.Zoom};
             detailTitle=new Label{Text="选择软件",Location=new Point(52,0),Size=new Size(207,47),Font=new Font(Font.FontFamily,12,FontStyle.Bold),AutoEllipsis=true,Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right};detailSubtitle=new Label{Text="查看详细信息与操作",Dock=DockStyle.Bottom,Height=32,Tag="muted",AutoEllipsis=true};title.Controls.Add(detailIcon);title.Controls.Add(detailTitle);title.Controls.Add(detailSubtitle);title.Resize+=(s,e)=>detailTitle.Width=Math.Max(10,title.Width-detailTitle.Left);
             detail=new TextBox{Dock=DockStyle.Fill,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical,BorderStyle=BorderStyle.None,Text="选择软件后，可查看位置、版本、发现来源和卸载入口。",AccessibleName="软件详细信息"};
-            var actions=new CanvasTablePanel{Dock=DockStyle.Bottom,Height=189,RowCount=4,ColumnCount=1,Padding=new Padding(0,12,0,0),Tag="surface"};actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));for(int i=0;i<4;i++)actions.RowStyles.Add(new RowStyle(SizeType.Percent,25));
+            var actions=new CanvasTablePanel{Dock=DockStyle.Bottom,Height=233,RowCount=5,ColumnCount=1,Padding=new Padding(0,12,0,0),Tag="surface"};actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));for(int i=0;i<5;i++)actions.RowStyles.Add(new RowStyle(SizeType.Percent,20));
             uninstallButton=Button("正常卸载",async()=>{if(IsCandidate(Selected()))UseSelectedFolder();else await UninstallSelected();},true);openButton=Button("打开位置",OpenSelected);residualButton=Button("检查残留",ResidualDialog);var more=Button("更多操作  ▾",()=>appMenu.Show(selectionActions.Last(),new Point(0,selectionActions.Last().Height)));
             appMenu=new ContextMenuStrip();appMenu.Items.Add("处理安装目录…",null,(s,e)=>UseSelectedFolder());appMenu.Items.Add("清除失效记录…",null,async(s,e)=>await ClearRecord());
-            foreach(var b in new[]{uninstallButton,openButton,residualButton,more}){b.Dock=DockStyle.Fill;b.AutoSize=false;b.MinimumSize=Size.Empty;b.Margin=new Padding(0,0,0,6);selectionActions.Add(b);actions.Controls.Add(b);}
+            measureButton=Button("重新计算大小",async()=>await RemeasureSelected());
+            foreach(var b in new[]{uninstallButton,openButton,residualButton,measureButton,more}){b.Dock=DockStyle.Fill;b.AutoSize=false;b.MinimumSize=Size.Empty;b.Margin=new Padding(0,0,0,6);selectionActions.Add(b);actions.Controls.Add(b);}
             p.Controls.Add(detail);p.Controls.Add(actions);p.Controls.Add(title);return p;
         }
         Panel BuildFiles(){

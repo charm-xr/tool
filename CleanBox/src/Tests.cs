@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 namespace CleanBox {
-    public static class Tests {
+    public partial class Tests {
         static List<string> results=new List<string>();
         static void Check(bool ok,string name){if(!ok)throw new Exception("FAIL: "+name);results.Add("PASS: "+name);}
         static void Reject(Action action,string name){bool rejected=false;try{action();}catch{rejected=true;}Check(rejected,name);}
@@ -43,6 +43,26 @@ namespace CleanBox {
             File.WriteAllBytes(engineApp.Executable,new byte[64]);File.WriteAllBytes(Path.Combine(launcherDir,"uninstall.exe"),new byte[32]);
             lookup.Fill(engineApp,"",CancellationToken.None);
             Check(engineApp.SizeBytes==96&&engineApp.SizeKind==AppSizeKind.EngineLauncher&&!engineApp.SizePartial,"Matching icon and uninstall paths identify engine launcher files without claiming whole-app size");
+            string reason;
+            Check(InstalledSizeLookup.ResolveDirectory(new AppEntry{Path=launcherDir,Executable=engineApp.Executable},out reason)==null&&reason.Length>0,"A lone icon or inferred action path cannot authorize whole-directory size measurement");
+            Check(InstalledSizeLookup.ResolveDirectory(new AppEntry{InstallLocation=Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)},out reason)==null,"Size measurement rejects a shared software root");
+            var bounded=InstalledSizeLookup.Measure(launcherDir,CancellationToken.None,1,30000,null);
+            var complete=InstalledSizeLookup.Measure(launcherDir,CancellationToken.None,100,30000,null);
+            Check(bounded.Partial&&bounded.Bytes.HasValue&&complete.Bytes==96&&!complete.Partial,"A larger single-item budget replaces a bounded subtotal with a complete result");
+            var canceledSize=new CancellationTokenSource();canceledSize.Cancel();bool sizeCanceled=false;
+            try{InstalledSizeLookup.Measure(launcherDir,canceledSize.Token,100,30000,null);}catch(OperationCanceledException){sizeCanceled=true;}finally{canceledSize.Dispose();}
+            Check(sizeCanceled,"Directory measurement honors cancellation before work");
+            Check(MainForm.MatchesSize(new AppEntry{SizeBytes=1073741825L},1)&&!MainForm.MatchesSize(new AppEntry{SizeBytes=1073741824L},1)&&MainForm.MatchesSize(new AppEntry{SizeBytes=1073741824L},2)&&MainForm.MatchesSize(new AppEntry(),4),"Size ranges have explicit inclusive boundaries and distinguish unknown values");
+            string configs=Path.Combine(root,"configs"),exact=Path.Combine(configs,"ReviewFixture"),similar=Path.Combine(configs,"ReviewFixtureOther");
+            Directory.CreateDirectory(exact);Directory.CreateDirectory(similar);File.WriteAllBytes(Path.Combine(exact,"settings.dat"),new byte[80]);
+            var reviewApp=new AppEntry{Name="ReviewFixture",Path=launcherDir};
+            var leftovers=ResidualReview.Find(reviewApp,CancellationToken.None,new[]{configs},true);
+            Check(leftovers.Count==2&&leftovers.Any(x=>x.Path==exact&&x.Size.Bytes==80&&x.Evidence.Contains("完全匹配"))&&!leftovers.Any(x=>x.Path==similar),"Residual review lists exact-name candidates with evidence and measured size, leaving similar names alone");
+            reviewApp.Path=junction;leftovers=ResidualReview.Find(reviewApp,CancellationToken.None,new string[0],true);
+            Check(leftovers.Count==0&&File.Exists(Path.Combine(destination,"keep.txt")),"Residual review excludes linked paths and never changes their contents");
+            Check(ResidualReview.Probe(new AppEntry(),CancellationToken.None)==RegistrationState.Unregistered&&ResidualReview.Probe(new AppEntry{RegistryPath="invalid"},CancellationToken.None)==RegistrationState.Unknown,"Registration probe distinguishes unregistered and unverified records");
+            var missingRecord=new AppEntry{Hive=Microsoft.Win32.RegistryHive.CurrentUser,View=Microsoft.Win32.RegistryView.Registry64,RegistryPath=@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CleanBox-"+Guid.NewGuid().ToString("N")};
+            Check(ResidualReview.Probe(missingRecord,CancellationToken.None)==RegistrationState.Missing,"Single-record follow-up detects an absent registration without changing the registry");
             Reject(()=>Safety.Plan(linkHolder,true),"Deletion preflight rejects a real directory junction");
             Check(File.Exists(Path.Combine(destination,"keep.txt")),"Junction destination was not changed");Directory.Delete(junction,false);
             string csv=Path.Combine(root,"export.csv");Store.Export(new[]{new AppEntry{Name="=1+1"}},csv);Check(File.ReadAllText(csv).Contains("'=1+1"),"CSV formula-like names are neutralized");
@@ -62,6 +82,7 @@ namespace CleanBox {
                     var fail=Operations.Permanent(locked,true);Check(fail.Failed.Count==1&&File.Exists(locked),"Locked delete reports failure without claiming success");
                 }finally{if(!helper.HasExited){helper.Kill();helper.WaitForExit();}}
             }
+            VerifyV240(root);
             var clean=Operations.Permanent(root,true);Check(clean.Failed.Count==0&&!Directory.Exists(root),"Only test fixture removed after verification");
             results.Add("No installed software, user data, reboot queue or registry entries were modified.");
             File.WriteAllLines(Path.Combine(Store.Data,"test-results.txt"),results,new UTF8Encoding(true));

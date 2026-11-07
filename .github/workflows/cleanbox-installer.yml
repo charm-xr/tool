@@ -39,8 +39,8 @@ jobs:
           Invoke-TestProcess $setup $setupArgs
 
           $app = Join-Path $installDir 'CleanBox.exe'
-          if ($env:RELEASE_BUILD -eq 'true' -and (Get-Item -LiteralPath $app).VersionInfo.FileVersion -ne '2.2.4.0') {
-              throw 'The installer must contain CleanBox 2.2.4.'
+          if ($env:RELEASE_BUILD -eq 'true' -and (Get-Item -LiteralPath $app).VersionInfo.FileVersion -ne '2.4.1.0') {
+              throw 'The installer must contain CleanBox 2.4.1.'
           }
           $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'CleanBox/CleanBox.lnk'
           $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{A9F6C39D-09D9-4A44-B8C1-0AB5EF945C24}_is1'
@@ -75,7 +75,7 @@ jobs:
           }
           Write-Output 'Installer lifecycle and installed application checks passed.'
         env:
-          RELEASE_BUILD: ${{ github.event.head_commit.message == 'Publish CleanBox 2.2.4' }}
+          RELEASE_BUILD: ${{ github.event.head_commit.message == 'Publish CleanBox 2.4.1' }}
       - uses: actions/upload-artifact@v4
         with:
           name: CleanBox-Setup-Windows-x64
@@ -85,7 +85,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.event.head_commit.message == 'Publish CleanBox 2.2.4'
+    if: github.event.head_commit.message == 'Publish CleanBox 2.4.1'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -110,10 +110,11 @@ jobs:
           sha256sum --check CleanBox-Windows-x64.zip.sha256
 
           cat > "$RUNNER_TEMP/cleanbox-notes.md" <<'EOF'
-          - 软件列表新增可排序的「大小」列，详情与 CSV 导出注明大小依据。
-          - 安装记录缺少大小时补算可确认的本地安装目录，部分结果会明确标注。
-          - 华为移动应用引擎的条目标出 Windows 启动文件大小。引擎内的应用本体和缓存不计入这一数值。
-          - 文件解锁页检查后显示文件或文件夹大小。
+          - 新增磁盘占用分析。可选择磁盘或文件夹，按大小查看目录、找出最大的 200 个文件，并转到文件解锁页。
+          - 卸载残留核对任务可跨重启续办，主动结束时才移除。
+          - 软件大小支持分段筛选和后台重算。实测结果与时间跨刷新保留，版本或路径变化时标为待重算，部分统计单独筛选。
+          - 搜索刷新保留仍符合条件的选中项和滚动位置。
+          - 任务进度条采用圆角玻璃轨道和青绿色流光，适配深浅色与动效开关。
 
           **Windows x64 安装版**：下载 `CleanBox-Setup-Windows-x64.exe`，双击后按向导安装。
 
@@ -121,8 +122,8 @@ jobs:
 
           两个下载包均附 SHA-256 校验文件。
           EOF
-          gh release create cleanbox-v2.2.4 \
+          gh release create cleanbox-v2.4.1 \
             CleanBox-Setup-Windows-x64.exe CleanBox-Setup-Windows-x64.exe.sha256 \
             CleanBox-Windows-x64.zip CleanBox-Windows-x64.zip.sha256 \
-            --target "$GITHUB_SHA" --title 'CleanBox 2.2.4' \
+            --target "$GITHUB_SHA" --title 'CleanBox 2.4.1' \
             --notes-file "$RUNNER_TEMP/cleanbox-notes.md" --latest

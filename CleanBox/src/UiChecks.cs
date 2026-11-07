@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -14,22 +14,25 @@ namespace CleanBox {
             try{
                 check(apps.Count>0,"Live inventory populated");check(grid.Rows.Count==apps.Count,"Inventory and grid agree");check(sidebar.Width>=Px(170),"Sidebar scales to the screen DPI");
                 VerifySettingsAndFilters(check);
+                await VerifyCatalogExperience(check);
+                await VerifyUsagePage(check);
+                await VerifyProgressAppearance(check);
                 await VerifySettingsRowLight(check);
                 for(int i=0;i<3;i++){navigation[i].PerformClick();check(currentPage==i&&pages[i].Visible&&navigation[i].Selected,"Sidebar navigates to page "+i);}SwitchPage(0);
-                search.Text="__CleanBox_No_Match_"+Guid.NewGuid().ToString("N");check(grid.Rows.Cast<DataGridViewRow>().All(r=>!r.Visible)&&emptyList.Visible,"Empty search has a visible explanation");check(Selected()==null&&selectionActions.All(b=>!b.Enabled),"Empty results clear stale selection and disable actions");search.Clear();
+                search.Text="__CleanBox_No_Match_"+Guid.NewGuid().ToString("N");ApplyFilter();check(grid.Rows.Cast<DataGridViewRow>().All(r=>!r.Visible)&&emptyList.Visible,"Empty search has a visible explanation");check(Selected()==null&&selectionActions.All(b=>!b.Enabled),"Empty results clear stale selection and disable actions");search.Clear();ApplyFilter();
                 filter.SelectedIndex=1;check(grid.Rows.Cast<DataGridViewRow>().Where(r=>r.Visible).All(r=>((AppEntry)r.Tag).RegistryPath.Length>0),"Installed source filter excludes candidates");
                 filter.SelectedIndex=2;check(grid.Rows.Cast<DataGridViewRow>().Where(r=>r.Visible).All(r=>((AppEntry)r.Tag).Package.Length>0),"Store source filter selects packages");
                 filter.SelectedIndex=3;check(grid.Rows.Cast<DataGridViewRow>().Where(r=>r.Visible).All(r=>IsCandidate((AppEntry)r.Tag)),"Candidate filter includes only unregistered discoveries");filter.SelectedIndex=0;
-                search.Text=apps[0].Name;check(grid.Rows.Cast<DataGridViewRow>().Any(r=>r.Visible),"Name search finds an installed entry");check(Selected()!=null&&detailTitle.Text==Selected().Name,"Details follow the selected entry");search.Clear();
+                search.Text=apps[0].Name;ApplyFilter();check(grid.Rows.Cast<DataGridViewRow>().Any(r=>r.Visible),"Name search finds an installed entry");check(Selected()!=null&&detailTitle.Text==Selected().Name,"Details follow the selected entry");search.Clear();ApplyFilter();
                 var protectedApp=new AppEntry{Name="UI protected fixture",RegistryPath="UI-fixture-protected",Protected=true,Source="已安装",Command="fake.exe"};
                 var candidate=new AppEntry{Name="UI candidate fixture",Executable=Path.Combine(Store.Home,"tests","ui-candidate.exe"),Path=Path.Combine(Store.Home,"tests"),Source="磁盘发现",SizeBytes=2097152};
                 foreach(var a in new[]{protectedApp,candidate})Add(a);
-                search.Text=protectedApp.Name;check(!uninstallButton.Enabled&&!residualButton.Enabled&&!appMenu.Items[0].Enabled&&!appMenu.Items[1].Enabled,"System components keep destructive entry points disabled");
-                search.Text=candidate.Name;check(uninstallButton.Text=="核对并处理目录"&&uninstallButton.Enabled&&!appMenu.Items[1].Enabled,"Candidate uses directory verification instead of a fake uninstall action");
+                search.Text=protectedApp.Name;ApplyFilter();check(!uninstallButton.Enabled&&!residualButton.Enabled&&!appMenu.Items[0].Enabled&&!appMenu.Items[1].Enabled,"System components keep destructive entry points disabled");
+                search.Text=candidate.Name;ApplyFilter();check(uninstallButton.Text=="核对并处理目录"&&uninstallButton.Enabled&&!appMenu.Items[1].Enabled,"Candidate uses directory verification instead of a fake uninstall action");
                 var sizeCell=grid.SelectedRows[0].Cells[sizeColumn.Index];
                 check(sizeCell.Value is long && (string)sizeCell.FormattedValue=="2 MB" && detail.Text.Contains("2 MB（仅程序文件）"),"Software size is numeric for sorting and names the measured scope");
                 uninstallButton.PerformClick();check(currentPage==1&&pathBox.Text==candidate.Path,"Candidate action opens the correct target in file tools");
-                search.Clear();foreach(var a in new[]{protectedApp,candidate}){var row=grid.Rows.Cast<DataGridViewRow>().First(r=>r.Tag==a);grid.Rows.Remove(row);apps.Remove(a);ids.Remove(a.Id);}ApplyFilter();grid.ClearSelection();grid.Rows[0].Selected=true;grid.CurrentCell=grid.Rows[0].Cells[0];grid.FirstDisplayedScrollingRowIndex=0;ShowSelection();
+                search.Clear();ApplyFilter();foreach(var a in new[]{protectedApp,candidate}){var row=grid.Rows.Cast<DataGridViewRow>().First(r=>r.Tag==a);grid.Rows.Remove(row);apps.Remove(a);ids.Remove(a.Id);}ApplyFilter();grid.ClearSelection();grid.Rows[0].Selected=true;grid.CurrentCell=grid.Rows[0].Cells[0];grid.FirstDisplayedScrollingRowIndex=0;ShowSelection();
                 pathBox.Clear();check(!inspectButton.Enabled&&!recycleButton.Enabled&&!stopButton.Enabled,"Empty target disables file actions");
                 pathBox.Text=Path.Combine(Store.Home,"tests","ui-target.txt");lockPath=pathBox.Text;lockList.Items.Add(new LockOwner{Name="UI protected fixture",Pid=4,CanStop=false});lockList.SelectedIndex=0;check(!stopButton.Enabled&&!fileMenu.Items[0].Enabled,"Protected or unverifiable process cannot be stopped");
                 pathBox.Text=Path.Combine(Store.Home,"tests","ui-next.txt");check(lockList.Items.Count==0&&lockPath==""&&!stopButton.Enabled,"Changing target invalidates previous lock result");

@@ -28,28 +28,31 @@ namespace CleanBox {
     }
 
     public partial class MainForm {
-        ChoiceButton kindFilter, publisherFilter, driveFilter;
-        UiButton advancedButton, resetFiltersButton;
+        ChoiceButton kindFilter, publisherFilter, driveFilter, sizeFilter;
+        UiButton advancedButton, resetFiltersButton, largeAppsButton;
         Panel advancedFilters;
         Label filterSummary;
         bool updatingFilters;
 
         Panel BuildFilters() {
             advancedFilters = new SurfacePanel {
-                Dock = DockStyle.Top, Height = 96, Padding = new Padding(12, 9, 12, 9), Visible = false
+                Dock = DockStyle.Top, Height = 92, Padding = new Padding(8, 6, 8, 6), Visible = false
             };
-            var columns = new CanvasTablePanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
+            var columns = new CanvasTablePanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1 };
             columns.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            for (int i = 0; i < 3; i++) columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 3));
+            for (int i = 0; i < 4; i++) columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
             kindFilter = FilterChoice("软件类型", new[] { "全部类型", "主要软件", "运行库与组件", "系统组件" });
             kindFilter.SelectedIndex = 1;
             publisherFilter = FilterChoice("发布者", new[] { "全部发布者" });
             driveFilter = FilterChoice("所在磁盘", new[] { "全部磁盘" });
+            sizeFilter = FilterChoice("占用大小", new[] { "全部大小", "大于 1 GB", "100 MB 至 1 GB", "小于 100 MB", "大小未知", "部分统计", "待重新计算" });
             columns.Controls.Add(FilterColumn("软件类型", kindFilter), 0, 0);
             columns.Controls.Add(FilterColumn("发布者", publisherFilter), 1, 0);
             columns.Controls.Add(FilterColumn("所在磁盘", driveFilter), 2, 0);
+            columns.Controls.Add(FilterColumn("占用大小", sizeFilter), 3, 0);
             advancedFilters.Controls.Add(columns);
             tips.SetToolTip(kindFilter, "主要软件会隐藏系统组件和常见运行库。组件按系统标记与名称识别，可切换到全部类型核对。");
+            tips.SetToolTip(sizeFilter, "按当前已知大小筛选；估算值、程序文件和部分统计各有范围，完整依据见右侧详情。");
             return advancedFilters;
         }
 
@@ -69,11 +72,18 @@ namespace CleanBox {
         }
 
         Panel BuildFilterSummary() {
-            var row = new CanvasPanel { Dock = DockStyle.Top, Height = 32 };
+            var row = new CanvasPanel { Dock = DockStyle.Top, Height = 36 };
             filterSummary = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, Tag = "muted" };
             resetFiltersButton = new UiButton { Text = "重置", Dock = DockStyle.Right, Width = 64 };
             resetFiltersButton.Click += (s, e) => ResetFilters();
+            largeAppsButton = new UiButton { Text = "大软件", Dock = DockStyle.Right, Width = 88 };
+            largeAppsButton.Click += (s, e) => {
+                sizeFilter.SelectedIndex = 1;
+                SortBySize();
+            };
+            tips.SetToolTip(largeAppsButton, "保留当前筛选，查看大于 1 GB 的条目并按大小降序排列；大小依据见每行标签。");
             row.Controls.Add(filterSummary);
+            row.Controls.Add(largeAppsButton);
             row.Controls.Add(resetFiltersButton);
             UpdateFilterCaption();
             return row;
@@ -114,14 +124,27 @@ namespace CleanBox {
             string publisher = ChoiceValue(publisherFilter), drive = ChoiceValue(driveFilter);
             return (kind <= 0 || CatalogClassification.Kind(app) == kind)
                 && (publisher == null || CatalogClassification.Publisher(app).Equals(publisher, StringComparison.OrdinalIgnoreCase))
-                && (drive == null || CatalogClassification.Drive(app) == drive);
+                && (drive == null || CatalogClassification.Drive(app) == drive)
+                && MatchesSize(app, sizeFilter == null ? 0 : sizeFilter.SelectedIndex);
+        }
+
+        internal static bool MatchesSize(AppEntry app, int range) {
+            if (range <= 0) return true;
+            if (range == 5) return app.SizePartial && !app.SizeStale;
+            if (range == 6) return app.SizeStale;
+            if (range == 4) return !app.SizeBytes.HasValue || app.SizeStale;
+            if (app.SizeStale) return false;
+            if (!app.SizeBytes.HasValue) return false;
+            long size = app.SizeBytes.Value;
+            if (app.SizePartial) return range == 1 && size > 1073741824L;
+            return range == 1 ? size > 1073741824L : range == 2 ? size >= 104857600L && size <= 1073741824L : size < 104857600L;
         }
 
         void ResetFilters() {
             updatingFilters = true;
             try {
                 filter.SelectedIndex = 0;
-                kindFilter.SelectedIndex = publisherFilter.SelectedIndex = driveFilter.SelectedIndex = 0;
+                kindFilter.SelectedIndex = publisherFilter.SelectedIndex = driveFilter.SelectedIndex = sizeFilter.SelectedIndex = 0;
                 search.Clear();
             } finally { updatingFilters = false; }
             ApplyFilter();
@@ -134,11 +157,13 @@ namespace CleanBox {
             if (kindFilter.SelectedIndex > 0) conditions.Add(kindFilter.Items[kindFilter.SelectedIndex].ToString());
             if (ChoiceValue(publisherFilter) != null) conditions.Add(ChoiceValue(publisherFilter));
             if (ChoiceValue(driveFilter) != null) conditions.Add(ChoiceValue(driveFilter));
+            if (ChoiceValue(sizeFilter) != null) conditions.Add(ChoiceValue(sizeFilter));
             if (search.Text.Trim().Length > 0) conditions.Add("搜索“" + search.Text.Trim() + "”");
             filterSummary.Text = conditions.Count == 0 ? "全部条目" : string.Join(" · ", conditions);
             tips.SetToolTip(filterSummary, filterSummary.Text);
             advancedButton.Text = conditions.Count == 0 ? "筛选" : "筛选 · " + conditions.Count;
             resetFiltersButton.Enabled = conditions.Count > 0;
+            if (largeAppsButton != null) largeAppsButton.Selected = sizeFilter.SelectedIndex == 1;
         }
     }
 }

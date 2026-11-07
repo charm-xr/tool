@@ -97,7 +97,9 @@ namespace CleanBox {
     // scrollbar strips live OUTSIDE a child viewport and cannot be hit or painted
     // in the visible track. The separate managed scrollbar owns all pointer input.
     internal sealed class ScrollBinding:IDisposable {
-        readonly Control owner;ScrollObserver observer;bool queued,syncing,moving,disposed;int[] scrollRows;
+        readonly Control owner;ScrollObserver observer;bool queued,syncing,moving,disposed;int[] scrollRows;int batchDepth;
+        internal void BeginBatch(){batchDepth++;}
+        internal void EndBatch(){if(batchDepth>0)batchDepth--;if(batchDepth==0)Queue();}
         internal readonly ScrollSurface Host,Viewport;
         internal readonly ScrollVisual Vertical,Horizontal,Corner;
         internal int RefreshCount{get;private set;}
@@ -119,7 +121,7 @@ namespace CleanBox {
         void Changed(object sender,EventArgs e){Refresh();}
         void HandleCreated(object sender,EventArgs e){InstallObserver();Refresh();}
         void HandleGone(object sender,EventArgs e){if(observer!=null){observer.Detach();observer=null;}}
-        void GridScroll(object sender,ScrollEventArgs e){if(!moving&&!syncing)SyncPositions();}
+        void GridScroll(object sender,ScrollEventArgs e){if(batchDepth==0&&!moving&&!syncing)SyncPositions();}
         void RowsAdded(object sender,DataGridViewRowsAddedEventArgs e){scrollRows=null;Queue();}
         void RowsRemoved(object sender,DataGridViewRowsRemovedEventArgs e){scrollRows=null;Queue();}
         void RowsSorted(object sender,EventArgs e){scrollRows=null;Queue();}
@@ -129,7 +131,7 @@ namespace CleanBox {
         void OwnerDisposed(object sender,EventArgs e){Dispose();}
         void InstallObserver(){if(observer==null&&owner.IsHandleCreated)observer=new ScrollObserver(owner.Handle,this);}
         internal void Queue(){
-            if(disposed||syncing||moving||queued||!owner.IsHandleCreated||owner.IsDisposed)return;queued=true;
+            if(disposed||batchDepth>0||syncing||moving||queued||!owner.IsHandleCreated||owner.IsDisposed)return;queued=true;
             try{owner.BeginInvoke((Action)(()=>{queued=false;if(!disposed)Refresh();}));}catch(InvalidOperationException){queued=false;}
         }
         void SyncPositions(){
@@ -137,7 +139,7 @@ namespace CleanBox {
             Horizontal.UpdateRange(Horizontal.Visible?ScrollNative.Range(owner,true):new ScrollRange());
         }
         internal void ContentScrolled(){
-            if(disposed||syncing||moving)return;SyncPositions();
+            if(disposed||batchDepth>0||syncing||moving)return;SyncPositions();
             owner.Update();Vertical.Update();Horizontal.Update();
         }
         internal void Move(bool horizontal,int value){
@@ -153,7 +155,7 @@ namespace CleanBox {
             }finally{moving=false;}
         }
         internal void Refresh(){
-            if(disposed||syncing||owner.IsDisposed)return;syncing=true;
+            if(disposed||batchDepth>0||syncing||owner.IsDisposed)return;syncing=true;
             try{
                 RefreshCount++;InstallObserver();if(Host.ClientSize.Width<1||Host.ClientSize.Height<1)return;
                 float dpi=1;if(Host.IsHandleCreated)using(var g=Host.CreateGraphics())dpi=g.DpiX/96f;int track=Math.Max(14,(int)Math.Round(14*dpi));

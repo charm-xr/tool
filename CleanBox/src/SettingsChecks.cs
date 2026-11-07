@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
@@ -168,13 +168,13 @@ namespace CleanBox {
                 publisherFilter.SelectedIndex = publisherFilter.Items.FindIndex(x => x.ToString() == "Filter Publisher A");
                 driveFilter.SelectedIndex = driveFilter.Items.FindIndex(x => x.ToString() == @"D:\");
                 filter.SelectedIndex = 1;
-                search.Text = "Filter sample";
+                search.Text = "Filter sample";ApplyFilter();
                 var visible = grid.Rows.Cast<DataGridViewRow>().Where(r => r.Visible).ToArray();
                 check(visible.Length == 1 && visible[0].Tag == fixtures[0], "Type, publisher, drive, source and search combine correctly");
                 check(apps.Where(Matches).SequenceEqual(new[] { fixtures[0] }), "Export uses the same combined filter as the visible list");
                 driveFilter.SelectedIndex = driveFilter.Items.FindIndex(x => x.ToString() == @"C:\");
                 check(Selected() == fixtures[1], "Changing a filter updates selection and details");
-                search.Text = "nonexistent filter target";
+                search.Text = "nonexistent filter target";ApplyFilter();
                 check(Selected() == null && emptyList.Visible && selectionActions.All(b => !b.Enabled), "Empty combined results disable stale actions");
                 resetFiltersButton.PerformClick();
                 check(grid.Rows.Cast<DataGridViewRow>().All(r => r.Visible) && !resetFiltersButton.Enabled, "One-click reset clears every condition and search");

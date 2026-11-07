@@ -18,6 +18,27 @@ namespace CleanBox {
         public long? SizeBytes;
         public AppSizeKind SizeKind;
         public bool SizePartial;
+        public bool SizeStale;
+        public DateTime SizeMeasuredUtc;
+        public string InstallLocation = "", SizeNote = "";
+        public string SizeBadge {
+            get {
+                if(SizeStale)return "历史值 · 待重算";
+                if(!SizeBytes.HasValue)return "未读取";
+                string label=SizeKind==AppSizeKind.RegisteredEstimate?"登记估算":SizeKind==AppSizeKind.EngineLauncher?"启动文件":SizeKind==AppSizeKind.InstallDirectory?"目录实测":"程序文件";
+                return SizePartial?label+" · 部分":label;
+            }
+        }
+        public string SizeExplanation {
+            get {
+                if(SizeNote.Length>0)return SizeNote;
+                if(Protected&&!SizeBytes.HasValue)return "系统组件，未自动计算目录大小。";
+                if(Package.Length>0&&!SizeBytes.HasValue)return "商店应用未提供大小，安装目录由 Windows 管理。";
+                if(SizeBytes.HasValue&&SizeKind==AppSizeKind.RegisteredEstimate)return "软件登记的估算值，可能未包含后续更新和缓存。";
+                if(SizeBytes.HasValue&&SizeKind==AppSizeKind.Executable)return "仅此程序文件的长度，未包含同目录的其他文件及缓存。";
+                return SizeBytes.HasValue?"按文件长度统计或使用安装记录，不包含目录之外的缓存及数据。":"未提供大小，尚未找到可信的本地安装目录。";
+            }
+        }
         public string SizeSource {
             get {
                 if(!SizeBytes.HasValue)return "";
@@ -87,8 +108,8 @@ namespace CleanBox {
         public static string QuotePS(string s) { return "'"+s.Replace("'","''")+"'"; }
         public static void Export(IEnumerable<AppEntry> apps,string file) {
             Func<string,string> q=s=>{s=s??"";if(s.Length>0&&"=+-@\t\r\n".IndexOf(s[0])>=0)s="'"+s;return "\""+s.Replace("\"","\"\"")+"\"";};
-            var lines=new List<string>{"名称,版本,发布者,来源,安装位置,程序路径,大小（字节）,大小依据"};
-            foreach(var a in apps) lines.Add(string.Join(",",new[]{a.Name,a.Version,a.Publisher,a.Source,a.Path,a.Executable,a.SizeBytes.HasValue?a.SizeBytes.Value.ToString(CultureInfo.InvariantCulture):"",a.SizeSource}.Select(q)));
+            var lines=new List<string>{"名称,版本,发布者,来源,安装位置,程序路径,大小（字节）,大小依据,大小说明"};
+            foreach(var a in apps) lines.Add(string.Join(",",new[]{a.Name,a.Version,a.Publisher,a.Source,a.Path,a.Executable,a.SizeBytes.HasValue?a.SizeBytes.Value.ToString(CultureInfo.InvariantCulture):"",a.SizeSource,a.SizeExplanation}.Select(q)));
             File.WriteAllLines(file,lines, new UTF8Encoding(true));
         }
     }
@@ -106,14 +127,15 @@ namespace CleanBox {
                         a.SizeBytes=FileSizes.FromEstimatedKilobytes(k.GetValue("EstimatedSize"));
                         a.SizeKind=AppSizeKind.RegisteredEstimate;
                         string installLocation=V(k,"InstallLocation");
+                        a.InstallLocation=installLocation;
                         a.Path=CleanPath(installLocation); a.Executable=IconPath(V(k,"DisplayIcon"));
                         if(a.Path.Length==0 && File.Exists(a.Executable)) a.Path=System.IO.Path.GetDirectoryName(a.Executable);
                         if(a.Path.Length==0) { string exe,args; if(ParseCommand(a.Command,out exe,out args) && System.IO.Path.IsPathRooted(exe) && File.Exists(exe)) a.Path=System.IO.Path.GetDirectoryName(exe); }
                         if(!a.SizeBytes.HasValue&&!a.Protected) {
                             try { sizes.Fill(a,installLocation,token); }
-                            catch(IOException) { }
-                            catch(UnauthorizedAccessException) { }
-                            catch(System.Security.SecurityException) { }
+                            catch(IOException) { a.SizeNote="目录不可访问或路径无效。"; }
+                            catch(UnauthorizedAccessException) { a.SizeNote="没有读取安装目录的权限。"; }
+                            catch(System.Security.SecurityException) { a.SizeNote="系统限制了安装目录的读取权限。"; }
                         }
                         add(a);
                     }} catch(OperationCanceledException) { throw; } catch(Exception e) { Store.Log("跳过安装记录 " + key + "："+e.Message); } }
@@ -135,7 +157,7 @@ namespace CleanBox {
             if(string.IsNullOrWhiteSpace(json)) return;
             var ser=new JavaScriptSerializer{MaxJsonLength=16777216}; var obj=ser.DeserializeObject(json); var list=obj as object[] ?? new[]{obj};
             foreach(var item in list) { token.ThrowIfCancellationRequested(); var d=item as Dictionary<string,object>; if(d==null) continue; Func<string,string> v=k=>d.ContainsKey(k)?Convert.ToString(d[k]):"";
-                add(new AppEntry{Name=v("Name"),Version=v("Version"),Publisher=v("Publisher"),Path=v("InstallLocation"),Package=v("PackageFullName"),Source="商店 / MSIX · 当前用户",Protected=v("IsFramework")=="True"||v("NonRemovable")=="True"});
+                add(new AppEntry{Name=v("Name"),Version=v("Version"),Publisher=v("Publisher"),Path=v("InstallLocation"),InstallLocation=v("InstallLocation"),Package=v("PackageFullName"),Source="商店 / MSIX · 当前用户",Protected=v("IsFramework")=="True"||v("NonRemovable")=="True"});
             }
         }
         public static void Shortcuts(Action<AppEntry> add,Action<string> status,CancellationToken token) {
